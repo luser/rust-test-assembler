@@ -9,11 +9,22 @@
 //! allows for easily building a stream of bytes in any desired
 //! endianness.
 //!
+//! This crate defines two useful structs: [`Section`][Section] and
+//! [`Label`][Label]. A `Section` is simply a stream of bytes which can
+//! be written to, and a `Label` is a placeholder for a value that can be
+//! computed based on other values, but can be written to a `Section` without
+//! knowing its value at that time.
+//!
+//! [Section]: struct.Section.html
+//! [Label]: struct.Label.html
+//!
 //! Based on [Jim Blandy's fantastic C++ implementation][1] in Google Breakpad.
+//!
 //! [1]: https://chromium.googlesource.com/breakpad/breakpad/+/master/src/common/test_assembler.h
+//!
 //! # Examples
 //!
-//! The methods for writing data all consume and return the `Section`
+//! The `Section` methods for writing data all consume and return the `Section`
 //! so that they can be chained:
 //!
 //! ```
@@ -26,14 +37,14 @@
 //! ```
 //!
 //! `Label`s can be appended to a section as placeholders for values that
-//! are not yet known, using the same methods but with an L suffix:
+//! are not yet known using the same methods.
 //!
 //! ```
 //! use test_assembler::*;
 //!
 //! let l = Label::new();
 //! let mut s = Section::with_endian(Endian::Little);
-//! s = s.D32L(&l);
+//! s = s.D32(&l);
 //! // Now assign a value to l.
 //! l.set_const(0x12345678);
 //! assert_eq!(s.get_contents().unwrap(),
@@ -278,6 +289,37 @@ impl<'a> Sub<i64> for &'a Label {
     }
 }
 
+/// A marker trait for number types.
+pub trait Num {}
+
+impl Num for u8 {}
+impl Num for u16 {}
+impl Num for u32 {}
+impl Num for u64 {}
+
+/// An enum to hold `Label`s or `Num`s.
+pub enum LabelOrNum<T : Num> {
+    Label(Label),
+    Num(T),
+}
+
+/// A trait to allow passing numbers or Labels.
+pub trait ToLabelOrNum<'a, T : Num> {
+    fn to_labelornum(self) -> LabelOrNum<T>;
+}
+
+impl<'a, T : Num> ToLabelOrNum<'a, T> for &'a Label {
+    fn to_labelornum(self) -> LabelOrNum<T> {
+        LabelOrNum::Label(self.clone())
+    }
+}
+
+impl<'a, T : Num> ToLabelOrNum<'a, T> for T {
+    fn to_labelornum(self) -> LabelOrNum<T> {
+        LabelOrNum::Num(self)
+    }
+}
+
 /// A reference to a `Label` that has been appended to a `Section`.
 #[derive(Clone)]
 struct Reference {
@@ -298,9 +340,21 @@ struct Reference {
 /// little-endian signed and unsigned values of different sizes, and
 /// raw blocks of bytes.
 ///
+/// There are methods for appending each of `u8`, `u16`, `u32`, and `u64`
+/// in each of big, little, or the `Section`'s default endianness.
+/// The method names are {D,L,B}{8,16,32,64} for each variant, so
+/// [`D16`][D16] writes a `u16` in the `Section`'s default endianness, and
+/// [`L64`][L64] writes a `u64` in little-endian byte order.
+///
+/// Each of these methods also accepts a [`Label`][Label] to write
+/// non-constant values.
+///
 /// See [the module-level documentation][module] for examples.
 ///
 /// [module]: index.html
+/// [D16]: #method.D16
+/// [L64]: #method.L64
+/// [Label]: struct.Label.html
 pub struct Section  {
     /// The current endianness of the writer.
     ///
@@ -430,162 +484,136 @@ impl Section {
 
     /// Append `byte` with the Section's default endianness.
     ///
+    /// `byte` may be a `Label` or a `u8`.
     /// Return this section.
-    pub fn D8(mut self, byte : u8) -> Section {
-        self.contents.write_u8(byte).unwrap();
-        self
-    }
-    /// Append `label` as an u8 with the Section's default endianness.
-    ///
-    /// Return this section.
-    pub fn D8L(self, label : &Label) -> Section {
+    pub fn D8<'a, T : ToLabelOrNum<'a, u8>>(mut self, byte : T) -> Section {
         let endian = self.endian;
-        self.append_label(label, endian, 1)
+        match byte.to_labelornum() {
+            LabelOrNum::Num(n) => {
+                self.contents.write_u8(n).unwrap();
+                self
+            },
+            LabelOrNum::Label(l) => self.append_label(&l, endian, 1),
+        }
     }
     /// Append `byte` as little-endian (identical to `D8`).
     ///
     /// Return this section.
-    pub fn L8(self, byte : u8) -> Section { self.D8(byte) }
-    /// Append `label` as a little-endian u8 (identical to `D8L`).
-    ///
-    /// Return this section.
-    pub fn L8L(self, label : &Label) -> Section { self.D8L(label) }
+    pub fn L8<'a, T : ToLabelOrNum<'a, u8>>(self, byte : T) -> Section { self.D8(byte) }
     /// Append `byte` as big-endian (identical to `D8`).
     ///
     /// Return this section.
-    pub fn B8(self, byte : u8) -> Section { self.D8(byte) }
-    /// Append `label` as a big-endian u8 (identical to `D8L`).
-    ///
-    /// Return this section.
-    pub fn B8L(self, label : &Label) -> Section { self.D8L(label) }
+    pub fn B8<'a, T : ToLabelOrNum<'a, u8>>(self, byte : T) -> Section { self.D8(byte) }
 
     /// Append `word` with the Section's default endianness.
     ///
+    /// `word` may be a `Label` or a `u16`.
     /// Return this section.
-    pub fn D16(self, word : u16) -> Section {
+    pub fn D16<'a, T : ToLabelOrNum<'a, u16>>(self, word : T) -> Section {
         match self.endian {
             Endian::Little => self.L16(word),
             Endian::Big => self.B16(word)
         }
     }
-    /// Append `label` as an u16 with the Section's default endianness.
-    ///
-    /// Return this section.
-    pub fn D16L(self, label : &Label) -> Section {
-        let endian = self.endian;
-        self.append_label(label, endian, 2)
-    }
     /// Append `word` as little-endian.
     ///
+    /// `word` may be a `Label` or a `u16`.
     /// Return this section.
-    pub fn L16(mut self, word : u16) -> Section {
-        self.contents.write_u16::<LittleEndian>(word).unwrap();
-        self
-    }
-    /// Append `label` as a little-endian u16.
-    ///
-    /// Return this section.
-    pub fn L16L(self, label : &Label) -> Section {
-        self.append_label(label, Endian::Little, 2)
+    pub fn L16<'a, T : ToLabelOrNum<'a, u16>>(mut self, word : T) -> Section {
+        match word.to_labelornum() {
+            LabelOrNum::Num(n) => {
+                self.contents.write_u16::<LittleEndian>(n).unwrap();
+                self
+            },
+            LabelOrNum::Label(l) => self.append_label(&l, Endian::Little, 2),
+        }
     }
     /// Append `word` as big-endian.
     ///
+    /// `word` may be a `Label` or a `u16`.
     /// Return this section.
-    pub fn B16(mut self, word : u16) -> Section {
-        self.contents.write_u16::<BigEndian>(word).unwrap();
-        self
-    }
-    /// Append `label` as a big-endian u16.
-    ///
-    /// Return this section.
-    pub fn B16L(self, label : &Label) -> Section {
-        self.append_label(label, Endian::Big, 2)
+    pub fn B16<'a, T : ToLabelOrNum<'a, u16>>(mut self, word : T) -> Section {
+        match word.to_labelornum() {
+            LabelOrNum::Num(n) => {
+                self.contents.write_u16::<BigEndian>(n).unwrap();
+                self
+            },
+            LabelOrNum::Label(l) => self.append_label(&l, Endian::Big, 2),
+        }
     }
 
     /// Append `dword` with the Section's default endianness.
     ///
+    /// `dword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn D32(self, dword : u32) -> Section {
+    pub fn D32<'a, T : ToLabelOrNum<'a, u32>>(self, dword : T) -> Section {
         match self.endian {
             Endian::Little => self.L32(dword),
             Endian::Big => self.B32(dword)
         }
     }
-    /// Append `label` as an u32 with the Section's default endianness.
-    ///
-    /// Return this section.
-    pub fn D32L(self, label : &Label) -> Section {
-        let endian = self.endian;
-        self.append_label(label, endian, 4)
-    }
     /// Append `dword` as little-endian.
     ///
+    /// `dword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn L32(mut self, dword : u32) -> Section {
-        self.contents.write_u32::<LittleEndian>(dword).unwrap();
-        self
-    }
-    /// Append `label` as a little-endian u32.
-    ///
-    /// Return this section.
-    pub fn L32L(self, label : &Label) -> Section {
-        self.append_label(label, Endian::Little, 4)
+    pub fn L32<'a, T : ToLabelOrNum<'a, u32>>(mut self, dword : T) -> Section {
+        match dword.to_labelornum() {
+            LabelOrNum::Num(n) => {
+                self.contents.write_u32::<LittleEndian>(n).unwrap();
+                self
+            },
+            LabelOrNum::Label(l) => self.append_label(&l, Endian::Little, 4),
+        }
     }
     /// Append `dword` as big-endian.
     ///
+    /// `dword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn B32(mut self, dword : u32) -> Section {
-        self.contents.write_u32::<BigEndian>(dword).unwrap();
-        self
-    }
-    /// Append `label` as a big-endian u32.
-    ///
-    /// Return this section.
-    pub fn B32L(self, label : &Label) -> Section {
-        self.append_label(label, Endian::Big, 4)
+    pub fn B32<'a, T : ToLabelOrNum<'a, u32>>(mut self, dword : T) -> Section {
+        match dword.to_labelornum() {
+            LabelOrNum::Num(n) => {
+                self.contents.write_u32::<BigEndian>(n).unwrap();
+                self
+            },
+            LabelOrNum::Label(l) => self.append_label(&l, Endian::Big, 4),
+        }
     }
 
     /// Append `qword` with the Section's default endianness.
     ///
+    /// `qword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn D64(self, qword : u64) -> Section {
+    pub fn D64<'a, T : ToLabelOrNum<'a, u64>>(self, qword : T) -> Section {
         match self.endian {
             Endian::Little => self.L64(qword),
             Endian::Big => self.B64(qword)
         }
     }
-    /// Append `label` as an u64 with the Section's default endianness.
-    ///
-    /// Return this section.
-    pub fn D64L(self, label : &Label) -> Section {
-        let endian = self.endian;
-        self.append_label(label, endian, 8)
-    }
     /// Append `qword` as little-endian.
     ///
+    /// `qword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn L64(mut self, qword : u64) -> Section {
-        self.contents.write_u64::<LittleEndian>(qword).unwrap();
-        self
-    }
-    /// Append `label` as a little-endian u64.
-    ///
-    /// Return this section.
-    pub fn L64L(self, label : &Label) -> Section {
-        self.append_label(label, Endian::Little, 8)
+    pub fn L64<'a, T : ToLabelOrNum<'a, u64>>(mut self, qword : T) -> Section {
+        match qword.to_labelornum() {
+            LabelOrNum::Num(n) => {
+                self.contents.write_u64::<LittleEndian>(n).unwrap();
+                self
+            },
+            LabelOrNum::Label(l) => self.append_label(&l, Endian::Little, 8),
+        }
     }
     /// Append `qword` as big-endian.
     ///
+    /// `qword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn B64(mut self, qword : u64) -> Section {
-        self.contents.write_u64::<BigEndian>(qword).unwrap();
-        self
-    }
-    /// Append `label` as a big-endian u64.
-    ///
-    /// Return this section.
-    pub fn B64L(self, label : &Label) -> Section {
-        self.append_label(label, Endian::Big, 8)
+    pub fn B64<'a, T : ToLabelOrNum<'a, u64>>(mut self, qword : T) -> Section {
+        match qword.to_labelornum() {
+            LabelOrNum::Num(n) => {
+                self.contents.write_u64::<BigEndian>(n).unwrap();
+                self
+            },
+            LabelOrNum::Label(l) => self.append_label(&l, Endian::Big, 8),
+        }
     }
 }
 
@@ -783,7 +811,7 @@ fn section_test_64() {
 fn section_d8l_const_label() {
     let l = Label::from_const(10);
     let s = Section::with_endian(Endian::Little);
-    assert_eq!(s.D8L(&l).L8L(&l).B8L(&l)
+    assert_eq!(s.D8(&l).L8(&l).B8(&l)
                .get_contents().unwrap(),
                &[10, 10, 10]);
 }
@@ -792,7 +820,7 @@ fn section_d8l_const_label() {
 fn section_d16l_const_label() {
     let l = Label::from_const(0xABCD);
     let s = Section::with_endian(Endian::Little);
-    assert_eq!(s.D16L(&l).L16L(&l).B16L(&l)
+    assert_eq!(s.D16(&l).L16(&l).B16(&l)
                .get_contents().unwrap(),
                &[0xCD, 0xAB, 0xCD, 0xAB, 0xAB, 0xCD]);
 }
@@ -801,7 +829,7 @@ fn section_d16l_const_label() {
 fn section_d32l_const_label() {
     let l = Label::from_const(0xABCD1234);
     let s = Section::with_endian(Endian::Little);
-    assert_eq!(s.D32L(&l).L32L(&l).B32L(&l)
+    assert_eq!(s.D32(&l).L32(&l).B32(&l)
                .get_contents().unwrap(),
                &[0x34, 0x12, 0xCD, 0xAB,
                  0x34, 0x12, 0xCD, 0xAB,
@@ -812,7 +840,7 @@ fn section_d32l_const_label() {
 fn section_d64l_const_label() {
     let l = Label::from_const(0xABCD12345678F00D);
     let s = Section::with_endian(Endian::Little);
-    assert_eq!(s.D64L(&l).L64L(&l).B64L(&l)
+    assert_eq!(s.D64(&l).L64(&l).B64(&l)
                .get_contents().unwrap(),
                &[0x0D, 0xF0, 0x78, 0x56, 0x34, 0x12, 0xCD, 0xAB,
                  0x0D, 0xF0, 0x78, 0x56, 0x34, 0x12, 0xCD, 0xAB,
@@ -825,17 +853,16 @@ fn section_get_contents_label_no_value() {
     // has no value should return None.
     let l = Label::new();
     let s = Section::with_endian(Endian::Little);
-    assert!(s.D8L(&l).get_contents().is_none());
+    assert!(s.D8(&l).get_contents().is_none());
 }
 
 #[test]
 fn section_label_assign_late() {
     let l = Label::new();
     let mut s = Section::with_endian(Endian::Little);
-    s = s.D8L(&l).L8L(&l).B8L(&l);
+    s = s.D8(&l).L8(&l).B8(&l);
     // Now assign a value to l.
     l.set_const(10);
     assert_eq!(s.get_contents().unwrap(),
                &[10, 10, 10]);
 }
-
