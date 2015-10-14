@@ -50,6 +50,23 @@
 //! assert_eq!(s.get_contents().unwrap(),
 //!            &[0x78, 0x56, 0x34, 0x12]);
 //! ```
+//!
+//! `Label`s can also be set to the current length of the `Section` by calling
+//! [`mark`][mark]:
+//!
+//! [mark]: struct.Section.html#method.mark
+//!
+//! ```
+//! use test_assembler::*;
+//!
+//! let l = Label::new();
+//! let s = Section::with_endian(Endian::Little);
+//! let start = s.start();
+//! s.append_repeated(0, 10)
+//!     .mark(&l)
+//!     .append_repeated(0, 10);
+//! assert_eq!(&l - &start, 10);
+//! ```
 
 #![allow(non_snake_case)]
 
@@ -289,6 +306,17 @@ impl<'a> Sub<i64> for &'a Label {
     }
 }
 
+/// Subtract a `Label` from another `Label`, returning an `i64`.
+///
+/// If the labels are unrelated this will panic.
+impl<'a> Sub<&'a Label> for &'a Label {
+    type Output = i64;
+
+    fn sub(self, rhs: &'a Label) -> i64 {
+        self.offset(rhs).unwrap()
+    }
+}
+
 /// A marker trait for number types.
 pub trait Num {}
 
@@ -362,7 +390,10 @@ pub struct Section  {
     pub endian : Endian,
     /// The contents of the section.
     contents: Cursor<Vec<u8>>,
+    /// References to `Label`s that were added to this `Section`.
     references: Vec<Reference>,
+    /// A label representing the start of this `Section`.
+    start_ : Label,
 }
 
 impl Section {
@@ -377,6 +408,7 @@ impl Section {
             endian: endian,
             contents: Cursor::new(vec!()),
             references: vec!(),
+            start_: Label::new(),
         }
     }
 
@@ -409,6 +441,29 @@ impl Section {
         }
     }
 
+    /// Return a label representing the start of the section.
+    ///
+    /// It is up to the user whether this label represents the section's
+    /// position in an object file, the section's address in memory, or
+    /// what have you; some applications may need both, in which case
+    /// this simple-minded interface won't be enough. This class only
+    /// provides a single start label, for use with the Here and Mark
+    /// member functions.
+    pub fn start(&self) -> Label {
+        self.start_.clone()
+    }
+
+    /// A label representing the point at which the next Appended item will appear in the section, relative to start().
+    pub fn here(&self) -> Label {
+        &self.start_ + self.size() as i64
+    }
+
+    /// Set `label` to Here, and return this section.
+    pub fn mark(self, label : &Label) -> Section {
+        label.set(&self.here());
+        self
+    }
+
     /// Append `data` to the end of this section.
     ///
     /// Return this section.
@@ -425,6 +480,18 @@ impl Section {
             self.contents.write_u8(byte).unwrap();
         }
         self
+    }
+
+    /// Jump to the next location aligned on an `alignment`-byte boundary, relative to the start of the section.
+    ///
+    /// Fill the gap with zeroes. `alignment` must be a power of two.
+    /// Return this section.
+    pub fn align(self, alignment : u64) -> Section {
+        // `alignment` must be a power of two.
+        assert!(((alignment - 1) & alignment) == 0);
+        let new_size = (self.size() + alignment - 1) & !(alignment - 1);
+        let add = new_size - self.size();
+        self.append_repeated(0, add as usize)
     }
 
     fn store_label_value(mut self,
@@ -721,6 +788,13 @@ fn label_sub() {
 }
 
 #[test]
+fn label_sub_label() {
+    let l1 = Label::new();
+    let l2 = &l1 + 10;
+    assert_eq!(&l2 - &l1, 10);
+}
+
+#[test]
 fn label_set_const() {
     let l = Label::new();
     let val = 0x12345678;
@@ -865,4 +939,27 @@ fn section_label_assign_late() {
     l.set_const(10);
     assert_eq!(s.get_contents().unwrap(),
                &[10, 10, 10]);
+}
+
+#[test]
+fn section_start_here() {
+    let mut s = Section::with_endian(Endian::Little);
+    s = s.append_repeated(0, 10);
+    let start = s.start();
+    let mut here = s.here();
+    assert_eq!(here.offset(&start).unwrap(), 10);
+    s = s.append_repeated(0, 10);
+    here = s.here();
+    assert_eq!(here.offset(&start).unwrap(), 20);
+}
+
+#[test]
+fn section_start_mark() {
+    let s = Section::with_endian(Endian::Little);
+    let start = s.start();
+    let marked = Label::new();
+    s.append_repeated(0, 10)
+        .mark(&marked)
+        .append_repeated(0, 10);
+    assert_eq!(marked.offset(&start).unwrap(), 10);
 }
