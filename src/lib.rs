@@ -74,6 +74,7 @@ extern crate byteorder;
 
 use std::borrow::Borrow;
 use std::cell::RefCell;
+use std::fmt;
 use std::io::Cursor;
 use std::io::Seek;
 use std::io::SeekFrom;
@@ -81,7 +82,7 @@ use std::io::Write;
 use std::ops::{Add,Deref,Sub};
 use std::rc::Rc;
 
-use byteorder::{ByteOrder,BigEndian,LittleEndian,WriteBytesExt};
+use byteorder::{BigEndian,LittleEndian,WriteBytesExt};
 
 /// Possible byte orders
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -108,9 +109,62 @@ enum BindingValue {
     Unconstrained,
 }
 
+impl fmt::Debug for BindingValue {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            &BindingValue::Constant(v) => write!(f, "Constant({})", v),
+            &BindingValue::From(ref b, v) => write!(f, "From({:?}, {})", b, v),
+            &BindingValue::Unconstrained => write!(f, "Unconstrained"),
+        }
+    }
+}
+
 /// A label's value, or if that is not yet known, how the value is related to other labels' values.
 struct Binding {
     value : RefCell<BindingValue>,
+}
+
+impl fmt::Debug for Binding {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Binding {{ {:?} }}", self.value.borrow())
+    }
+}
+
+/// These methods need to work with Rc<Binding>, so they go on a trait implemented for that type.
+trait BindingOffset {
+    /// Get the base `Binding` that this Binding references, as well
+    /// as the sum of all offsets along the chain.
+    fn get_base_and_offset(&self) -> (Rc<Binding>, i64);
+    /// Return the offset between two bindings, if they are related.
+    fn offset(&self, other: &Rc<Binding>) -> Option<i64>;
+}
+
+impl BindingOffset for Rc<Binding> {
+    fn get_base_and_offset(&self) -> (Rc<Binding>, i64) {
+        match self.value.borrow().deref() {
+            &BindingValue::From(ref b, offset) => {
+                let (base, base_offset) = b.get_base_and_offset();
+                (base, base_offset + offset)
+            },
+            // If it's not From another binding, just return self.
+            _ => (self.clone(), 0),
+        }
+    }
+
+    fn offset(&self, other: &Rc<Binding>) -> Option<i64> {
+        let (base, offset) = self.get_base_and_offset();
+        let (other_base, other_offset) = other.get_base_and_offset();
+        let base_ptr = base.deref() as *const Binding;
+        let other_base_ptr = other_base.deref() as *const Binding;
+        if base_ptr == other_base_ptr {
+            // If the two bindings have the same base, then the offset is
+            // the difference of their offsets.
+            Some(offset - other_offset)
+        } else {
+            // Otherwise they are unrelated.
+            None
+        }
+    }
 }
 
 impl Binding {
@@ -126,6 +180,7 @@ impl Binding {
     pub fn constant(val : u64) -> Binding {
         Binding { value: RefCell::new(BindingValue::Constant(val)) }
     }
+
     /// Set this `Binding`s value to `val`.
     pub fn set_const(&self, val : u64) {
         let mut v = self.value.borrow_mut();
@@ -134,7 +189,8 @@ impl Binding {
     /// Set this `Binding`s value equal to `other`.
     pub fn set(&self, other : Rc<Binding>) {
         let mut v = self.value.borrow_mut();
-        *v = BindingValue::From(other, 0);
+        let (base, offset) = other.get_base_and_offset();
+        *v = BindingValue::From(base, offset);
     }
     /// Get the constant value of the `Binding`, if known.
     pub fn value(&self) -> Option<u64> {
@@ -149,28 +205,17 @@ impl Binding {
             _ => None,
         }
     }
-    /// Return the offset between two bindings, if they are related.
-    pub fn offset(&self, other : &Binding) -> Option<i64> {
-        let other_ptr = other as *const Binding;
-        let self_ptr = self as *const Binding;
-        // If self is other, then the offset is zero.
-        if self_ptr == other_ptr {
-            return Some(0);
-        }
-        // If this binding isn't specified relative to another label then
-        // the answer is None.
-        if let BindingValue::From(ref b, offset) = *self.value.borrow() {
-            // Get the answer from `b`, and add this binding's offfset.
-            b.offset(other).and_then(|val| Some(val + offset))
-        } else {
-            None
-        }
-    }
 }
 
 /// The inner workings of `Label`. Don't instanitate this, instantiate `Label`.
 pub struct RealLabel {
     binding : Rc<Binding>,
+}
+
+impl fmt::Debug for RealLabel {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.binding)
+    }
 }
 
 /// Methods for creating a `Label` (or a `RealLabel`, but don't do that).
@@ -192,10 +237,8 @@ impl RealLabel {
     }
     /// Get the relative offset from another label, if possible.
     pub fn offset(&self, other : &RealLabel) -> Option<i64> {
-        // Let the Binding calculate the offset, but try both directions.
+        // Let the Binding calculate the offset.
         self.binding.offset(&other.binding)
-            // Going the other direction the offsets are negative.
-            .or(other.binding.offset(&self.binding).and_then(|v| Some(-v)))
     }
     /// Set this `RealLabel`s value to `val`.
     pub fn set_const(&self, val : u64) {
@@ -257,6 +300,12 @@ impl LabelMaker for RealLabel {
 /// ```
 #[derive(Clone)]
 pub struct Label(pub Rc<RealLabel>);
+
+impl fmt::Debug for Label {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Label {{ {:?} }}", self.0)
+    }
+}
 
 impl Deref for Label {
     type Target = RealLabel;
@@ -705,6 +754,19 @@ fn binding_offset() {
     assert_eq!(b_f3.offset(&b_u).unwrap(), 10);
     let b_f4 = Rc::new(Binding::from(b_f3.clone(), 10));
     assert_eq!(b_f4.offset(&b_u).unwrap(), 20);
+    // Make another chain of bindings so we can test that the leaves of
+    // both chains compare properly.
+    // <INCEPTION HORN>
+    let b_f5 = Rc::new(Binding::from(b_u.clone(), 10));
+    let b_f6 = Rc::new(Binding::from(b_f5.clone(), 10));
+    assert_eq!(b_f6.offset(&b_f5).unwrap(), 10);
+    assert_eq!(b_f6.offset(&b_u).unwrap(), 20);
+    // Now for the kicker, b_f6 and b_f4 should be the same value, since
+    // they're both b_u + 20.
+    assert_eq!(b_f6.offset(&b_f4).unwrap(), 0);
+    // and some additional checks.
+    assert_eq!(b_f6.offset(&b_f3).unwrap(), 10);
+    assert_eq!(b_f3.offset(&b_f6).unwrap(), -10);
 }
 
 #[test]
@@ -763,6 +825,16 @@ fn label_label_offset() {
     assert_eq!(l2.offset(&l3).unwrap(), -10);
     assert_eq!(l3.offset(&l1).unwrap(), 20);
     assert_eq!(l1.offset(&l3).unwrap(), -20);
+
+    let l4 = Label::from_label_offset(&l3, 10);
+    assert_eq!(l4.offset(&l1).unwrap(), 30);
+
+    // Check that chains of label offsets work properly.
+    let l5 = Label::from_label_offset(&l1, 10);
+    // l5 and l2 are both l1 + 10.
+    assert_eq!(l5.offset(&l2).unwrap(), 0);
+    assert_eq!(l5.offset(&l3).unwrap(), -10);
+    assert_eq!(l3.offset(&l5).unwrap(), 10);
 }
 
 #[test]
@@ -962,4 +1034,16 @@ fn section_start_mark() {
         .mark(&marked)
         .append_repeated(0, 10);
     assert_eq!(marked.offset(&start).unwrap(), 10);
+}
+
+#[test]
+fn test_simple_labels() {
+    let start = Label::new();
+    let end = Label::new();
+
+    let _section = Section::new()
+        .mark(&start)
+        .mark(&end);
+
+    assert_eq!(start.offset(&end), Some(0));
 }
