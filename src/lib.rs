@@ -521,6 +521,22 @@ impl Section {
         self
     }
 
+    /// Append `section`'s contents to the end of this section.
+    ///
+    /// Any `Label`s that were appended to `section` will not be
+    /// resolved until this section is finalized.
+    /// Return this section.
+    pub fn append_section<S: Into<Section>>(mut self, section: S) -> Section {
+        let Section { contents, references, .. } = section.into();
+        let current = self.size();
+        self.contents.write_all(&contents.into_inner()).unwrap();
+        self.references.extend(references.into_iter().map(|mut r| {
+            r.offset = r.offset + current;
+            r
+        }));
+        self
+    }
+
     /// Append `count` copies of `byte` to the end of this section.
     ///
     /// Return this section.
@@ -905,6 +921,34 @@ fn section_append_bytes() {
     let b2 = [0xf, 0xe, 0xd, 0xc, 0xb];
     assert_eq!(s.append_bytes(&b1).append_bytes(&b2).get_contents().unwrap(),
                &[0, 1, 2, 3, 4, 0xf, 0xe, 0xd, 0xc, 0xb]);
+}
+
+#[test]
+fn section_append_section_simple() {
+    assert_eq!(Section::new()
+               .D8(0xab)
+               .append_section(Section::new().D8(0xcd))
+               .D8(0xef)
+               .get_contents().unwrap(),
+               &[0xab, 0xcd, 0xef]);
+}
+
+#[test]
+fn section_append_section_labels() {
+    let mut s = Section::new();
+    let l1 = Label::from_const(0x12);
+    let l2 = Label::new();
+    s = s.D8(0xab);
+    {
+        s = s.append_section(Section::new()
+                             .D8(0xcd)
+                             .D8(&l1)
+                             .D8(&l2));
+    }
+    s = s.D8(0xef);
+    l2.set_const(0x34);
+    assert_eq!(s.get_contents().unwrap(),
+               &[0xab, 0xcd, 0x12, 0x34, 0xef]);
 }
 
 #[test]
