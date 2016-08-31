@@ -1081,6 +1081,22 @@ fn section_start_mark() {
 }
 
 #[test]
+fn section_additional_methods_trait() {
+    trait ExtraSection {
+        fn add_a_thing(self) -> Section;
+    }
+
+    impl ExtraSection for Section {
+        fn add_a_thing(self) -> Section {
+            self.B8(0x12).B16(0x3456).B32(0x7890abcd)
+        }
+    }
+
+    assert_eq!(Section::new().D8(0).add_a_thing().D8(1).get_contents().unwrap(),
+               &[0, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 1]);
+}
+
+#[test]
 fn test_simple_labels() {
     let start = Label::new();
     let end = Label::new();
