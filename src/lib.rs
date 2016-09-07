@@ -442,7 +442,7 @@ pub struct Section  {
     /// References to `Label`s that were added to this `Section`.
     references: Vec<Reference>,
     /// A label representing the start of this `Section`.
-    start_ : Label,
+    start : Label,
 }
 
 impl Section {
@@ -457,7 +457,7 @@ impl Section {
             endian: endian,
             contents: Cursor::new(vec!()),
             references: vec!(),
-            start_: Label::new(),
+            start: Label::new(),
         }
     }
 
@@ -499,12 +499,12 @@ impl Section {
     /// provides a single start label, for use with the Here and Mark
     /// member functions.
     pub fn start(&self) -> Label {
-        self.start_.clone()
+        self.start.clone()
     }
 
     /// A label representing the point at which the next Appended item will appear in the section, relative to start().
     pub fn here(&self) -> Label {
-        &self.start_ + self.size() as i64
+        &self.start + self.size() as i64
     }
 
     /// Set `label` to Here, and return this section.
