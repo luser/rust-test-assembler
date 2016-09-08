@@ -385,6 +385,12 @@ pub trait ToLabelOrNum<'a, T : Num> {
     fn to_labelornum(self) -> LabelOrNum<T>;
 }
 
+impl<'a, T : Num> ToLabelOrNum<'a, T> for Label {
+    fn to_labelornum(self) -> LabelOrNum<T> {
+        LabelOrNum::Label(self)
+    }
+}
+
 impl<'a, T : Num> ToLabelOrNum<'a, T> for &'a Label {
     fn to_labelornum(self) -> LabelOrNum<T> {
         LabelOrNum::Label(self.clone())
@@ -432,7 +438,7 @@ struct Reference {
 /// [D16]: #method.D16
 /// [L64]: #method.L64
 /// [Label]: struct.Label.html
-pub struct Section  {
+pub struct Section {
     /// The current endianness of the writer.
     ///
     /// This sets the behavior of the D<N> appending functions.
@@ -442,7 +448,9 @@ pub struct Section  {
     /// References to `Label`s that were added to this `Section`.
     references: Vec<Reference>,
     /// A label representing the start of this `Section`.
-    start : Label,
+    start: Label,
+    /// A label representing the final size of this `Section`.
+    final_size: Label,
 }
 
 impl Section {
@@ -458,12 +466,20 @@ impl Section {
             contents: Cursor::new(vec!()),
             references: vec!(),
             start: Label::new(),
+            final_size: Label::new(),
         }
     }
 
     /// Return the current size of the section.
     pub fn size(&self) -> u64 {
         self.contents.get_ref().len() as u64
+    }
+
+    /// Return a `Label` that will resolve to the final size of the section.
+    ///
+    /// This label is undefined until `get_contents` is called.
+    pub fn final_size(&self) -> Label {
+        self.final_size.clone()
     }
 
     /// Get the contents of this section as a slice of bytes.
@@ -473,6 +489,7 @@ impl Section {
     pub fn get_contents(self) -> Option<Vec<u8>> {
         // Patch all labels into the section's contents.
         let mut section = self;
+        section.final_size.set_const(section.size());
         let references : Vec<Reference> = section.references.iter().cloned().collect();
         let mut ok = true;
         section = references.iter().cloned().fold(section, |s, r| {
@@ -527,7 +544,8 @@ impl Section {
     /// resolved until this section is finalized.
     /// Return this section.
     pub fn append_section<S: Into<Section>>(mut self, section: S) -> Section {
-        let Section { contents, references, .. } = section.into();
+        let Section { contents, references, final_size, .. } = section.into();
+        final_size.set_const(contents.get_ref().len() as u64);
         let current = self.size();
         self.contents.write_all(&contents.into_inner()).unwrap();
         self.references.extend(references.into_iter().map(|mut r| {
@@ -924,6 +942,14 @@ fn section_append_bytes() {
 }
 
 #[test]
+fn section_final_size() {
+    let s = Section::new();
+    let size = s.final_size();
+    s.append_repeated(0, 20).get_contents().unwrap();
+    assert_eq!(size.value().unwrap(), 20);
+}
+
+#[test]
 fn section_append_section_simple() {
     assert_eq!(Section::new()
                .D8(0xab)
@@ -949,6 +975,18 @@ fn section_append_section_labels() {
     l2.set_const(0x34);
     assert_eq!(s.get_contents().unwrap(),
                &[0xab, 0xcd, 0x12, 0x34, 0xef]);
+}
+
+#[test]
+fn section_append_section_final_size() {
+    let s = Section::new().D8(0xcd);
+    assert_eq!(Section::new()
+               .D8(0xab)
+               .D8(s.final_size())
+               .append_section(s)
+               .D8(0xef)
+               .get_contents().unwrap(),
+               &[0xab, 1, 0xcd, 0xef]);
 }
 
 #[test]
