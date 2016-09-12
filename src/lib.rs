@@ -524,6 +524,12 @@ impl Section {
         &self.start + self.size() as i64
     }
 
+    /// Set the value of `start()` to `value`.
+    pub fn set_start_const(self, value: u64) -> Section {
+        self.start.set_const(value);
+        self
+    }
+
     /// Set `label` to Here, and return this section.
     pub fn mark(self, label : &Label) -> Section {
         label.set(&self.here());
@@ -1144,4 +1150,15 @@ fn test_simple_labels() {
         .mark(&end);
 
     assert_eq!(start.offset(&end), Some(0));
+}
+
+#[test]
+fn test_set_start_const() {
+    let l = Label::new();
+    Section::new()
+        .set_start_const(0)
+        .append_repeated(0, 10)
+        .mark(&l)
+        .get_contents().unwrap();
+    assert_eq!(l.value().unwrap(), 10);
 }
