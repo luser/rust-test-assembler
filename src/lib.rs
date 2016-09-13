@@ -1002,6 +1002,14 @@ fn section_append_repeated() {
                &[0xff, 0xff, 0xff, 0xff, 0xff]);
 }
 
+
+#[test]
+fn section_align() {
+    let s = Section::new();
+    assert_eq!(s.D8(1).align(8).D8(1).get_contents().unwrap(),
+               &[1, 0, 0, 0, 0, 0, 0, 0, 1]);
+}
+
 #[test]
 fn section_test_8() {
     let s = Section::new();
@@ -1161,4 +1169,18 @@ fn test_set_start_const() {
         .mark(&l)
         .get_contents().unwrap();
     assert_eq!(l.value().unwrap(), 10);
+}
+
+#[test]
+fn section_bigendian_defaults() {
+    let s = Section::with_endian(Endian::Big);
+    assert_eq!(s.D8(0x12)
+               .D16(0x1234)
+               .D32(0x12345678)
+               .D64(0x12345678ABCDEFFF)
+               .get_contents().unwrap(),
+               &[0x12,
+                 0x12, 0x34,
+                 0x12, 0x34, 0x56, 0x78,
+                 0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF, 0xFF]);
 }
