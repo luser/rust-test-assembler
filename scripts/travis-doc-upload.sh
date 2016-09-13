@@ -5,6 +5,10 @@
 
 set -e
 
+if test -n "$TRAVIS_PULL_REQUEST" || test "$TRAVIS_BRANCH" != "master"; then
+  exit 0
+fi
+
 . ./scripts/travis-doc-upload.cfg
 
 [ "$TRAVIS_BRANCH" = master ]
