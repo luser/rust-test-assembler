@@ -207,7 +207,7 @@ impl Binding {
     }
 }
 
-/// The inner workings of `Label`. Don't instanitate this, instantiate `Label`.
+/// The inner workings of `Label`. Don't instantiate this, instantiate `Label`.
 pub struct RealLabel {
     binding : Rc<Binding>,
 }
