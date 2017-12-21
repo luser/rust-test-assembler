@@ -41,7 +41,7 @@ after_success:
         # cost of some speed <https://github.com/huonw/travis-cargo/issues/12>)
         travis-cargo coveralls --no-sudo --verify
         set -v -x
-        for f in target/debug/test_assembler-*; do
+        for f in target/debug/deps/test_assembler-*; do
           ./kcov/build/src/kcov --verify --exclude-pattern=/.cargo --include-pattern=$PWD target/kcov $f
         done
         # Workaround for https://github.com/huonw/travis-cargo/issues/58
