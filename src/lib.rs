@@ -72,6 +72,12 @@
 
 extern crate byteorder;
 
+#[cfg(doctest)]
+extern crate doc_comment;
+
+#[cfg(doctest)]
+doc_comment::doctest!("../README.md");
+
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::fmt;
