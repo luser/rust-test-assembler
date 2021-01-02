@@ -117,10 +117,10 @@ enum BindingValue {
 
 impl fmt::Debug for BindingValue {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            &BindingValue::Constant(v) => write!(f, "Constant({})", v),
-            &BindingValue::From(ref b, v) => write!(f, "From({:?}, {})", b, v),
-            &BindingValue::Unconstrained => write!(f, "Unconstrained"),
+        match *self {
+            BindingValue::Constant(v) => write!(f, "Constant({})", v),
+            BindingValue::From(ref b, v) => write!(f, "From({:?}, {})", b, v),
+            BindingValue::Unconstrained => write!(f, "Unconstrained"),
         }
     }
 }
@@ -147,8 +147,8 @@ trait BindingOffset {
 
 impl BindingOffset for Rc<Binding> {
     fn get_base_and_offset(&self) -> (Rc<Binding>, i64) {
-        match self.value.borrow().deref() {
-            &BindingValue::From(ref b, offset) => {
+        match *self.value.borrow().deref() {
+            BindingValue::From(ref b, offset) => {
                 let (base, base_offset) = b.get_base_and_offset();
                 (base, base_offset + offset)
             }
@@ -212,7 +212,7 @@ impl Binding {
             // If this Binding is based on another Binding, ask it for its
             // value.
             BindingValue::From(ref base, addend) => {
-                base.value().and_then(|v| Some(v + addend as u64))
+                base.value().map(|v| v + addend as u64)
             }
             // If this Binding is unconstrained then its value is not known.
             _ => None,
@@ -331,7 +331,7 @@ impl fmt::Debug for Label {
 impl Deref for Label {
     type Target = RealLabel;
 
-    fn deref<'a>(&'a self) -> &'a RealLabel {
+    fn deref(&self) -> &RealLabel {
         let &Label(ref inner) = self;
         inner.deref()
     }
@@ -486,7 +486,7 @@ impl Section {
     /// Construct a `Section` with `endian` endianness.
     pub fn with_endian(endian: Endian) -> Section {
         Section {
-            endian: endian,
+            endian,
             contents: Cursor::new(vec![]),
             references: vec![],
             start: Label::new(),
@@ -514,7 +514,7 @@ impl Section {
         // Patch all labels into the section's contents.
         let mut section = self;
         section.final_size.set_const(section.size());
-        let references: Vec<Reference> = section.references.iter().cloned().collect();
+        let references: Vec<Reference> = section.references.to_vec();
         let mut ok = true;
         section = references.iter().cloned().fold(section, |s, r| {
             if let Some(val) = r.label.value() {
@@ -584,7 +584,7 @@ impl Section {
         let current = self.size();
         self.contents.write_all(&contents.into_inner()).unwrap();
         self.references.extend(references.into_iter().map(|mut r| {
-            r.offset = r.offset + current;
+            r.offset += current;
             r
         }));
         self
@@ -648,8 +648,8 @@ impl Section {
             self.references.push(Reference {
                 label: label.clone(),
                 offset: current,
-                endian: endian,
-                size: size,
+                endian,
+                size,
             });
             // Reserve space for the label.
             self.append_repeated(0, size)
@@ -792,6 +792,12 @@ impl Section {
             }
             LabelOrNum::Label(l) => self.append_label(&l, Endian::Big, 8),
         }
+    }
+}
+
+impl Default for Section {
+    fn default() -> Self {
+        Section::new()
     }
 }
 
