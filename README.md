@@ -1,15 +1,12 @@
-![Continuous integration](https://github.com/luser/rust-test-assembler/workflows/Continuous%20integration/badge.svg) (https://coveralls.io/github/luser/rust-test-assembler?branch=master) [![crates.io](https://img.shields.io/crates/v/test-assembler.svg)](https://crates.io/crates/test-assembler) [![](https://docs.rs/test-assembler/badge.svg)](https://docs.rs/test-assembler)
+![Continuous integration](https://github.com/luser/rust-test-assembler/workflows/Continuous%20integration/badge.svg) [![crates.io](https://img.shields.io/crates/v/test-assembler.svg)](https://crates.io/crates/test-assembler) [![](https://docs.rs/test-assembler/badge.svg)](https://docs.rs/test-assembler)
 
 # Overview
 
 This Rust crate implements a set of types for building complex binary streams, primarily for writing tests of things that ingest binary data.
 
-[Documentation for master](http://luser.github.io/rust-project-docs/test-assembler/test_assembler/)
-
 # Example
 
 ``` rust
-extern crate test_assembler;
 
 use test_assembler::*;
 
