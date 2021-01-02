@@ -79,10 +79,10 @@ use std::io::Cursor;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::io::Write;
-use std::ops::{Add,Deref,Sub};
+use std::ops::{Add, Deref, Sub};
 use std::rc::Rc;
 
-use byteorder::{BigEndian,LittleEndian,WriteBytesExt};
+use byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 
 /// Possible byte orders
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -93,11 +93,11 @@ pub enum Endian {
 
 /// The default endianness for this system.
 #[cfg(target_endian = "little")]
-pub const DEFAULT_ENDIAN : Endian = Endian::Little;
+pub const DEFAULT_ENDIAN: Endian = Endian::Little;
 
 /// The default endianness for this system.
 #[cfg(target_endian = "big")]
-pub const DEFAULT_ENDIAN : Endian = Endian::Big;
+pub const DEFAULT_ENDIAN: Endian = Endian::Big;
 
 /// Potential values of a `Binding`.
 enum BindingValue {
@@ -121,7 +121,7 @@ impl fmt::Debug for BindingValue {
 
 /// A label's value, or if that is not yet known, how the value is related to other labels' values.
 struct Binding {
-    value : RefCell<BindingValue>,
+    value: RefCell<BindingValue>,
 }
 
 impl fmt::Debug for Binding {
@@ -145,7 +145,7 @@ impl BindingOffset for Rc<Binding> {
             &BindingValue::From(ref b, offset) => {
                 let (base, base_offset) = b.get_base_and_offset();
                 (base, base_offset + offset)
-            },
+            }
             // If it's not From another binding, just return self.
             _ => (self.clone(), 0),
         }
@@ -170,24 +170,30 @@ impl BindingOffset for Rc<Binding> {
 impl Binding {
     /// Create a new Binding with an unconstrained value.
     pub fn unconstrained() -> Binding {
-        Binding { value: RefCell::new(BindingValue::Unconstrained) }
+        Binding {
+            value: RefCell::new(BindingValue::Unconstrained),
+        }
     }
     /// Create a new Binding whose value is taken from another Binding.
-    pub fn from(other : Rc<Binding>, offset : i64) -> Binding {
-        Binding { value: RefCell::new(BindingValue::From(other, offset)) }
+    pub fn from(other: Rc<Binding>, offset: i64) -> Binding {
+        Binding {
+            value: RefCell::new(BindingValue::From(other, offset)),
+        }
     }
     /// Create a new Binding with a constant value.
-    pub fn constant(val : u64) -> Binding {
-        Binding { value: RefCell::new(BindingValue::Constant(val)) }
+    pub fn constant(val: u64) -> Binding {
+        Binding {
+            value: RefCell::new(BindingValue::Constant(val)),
+        }
     }
 
     /// Set this `Binding`s value to `val`.
-    pub fn set_const(&self, val : u64) {
+    pub fn set_const(&self, val: u64) {
         let mut v = self.value.borrow_mut();
         *v = BindingValue::Constant(val);
     }
     /// Set this `Binding`s value equal to `other`.
-    pub fn set(&self, other : Rc<Binding>) {
+    pub fn set(&self, other: Rc<Binding>) {
         let mut v = self.value.borrow_mut();
         let (base, offset) = other.get_base_and_offset();
         *v = BindingValue::From(base, offset);
@@ -199,8 +205,9 @@ impl Binding {
             BindingValue::Constant(c) => Some(c),
             // If this Binding is based on another Binding, ask it for its
             // value.
-            BindingValue::From(ref base, addend) =>
-                base.value().and_then(|v| Some(v + addend as u64)),
+            BindingValue::From(ref base, addend) => {
+                base.value().and_then(|v| Some(v + addend as u64))
+            }
             // If this Binding is unconstrained then its value is not known.
             _ => None,
         }
@@ -209,7 +216,7 @@ impl Binding {
 
 /// The inner workings of `Label`. Don't instantiate this, instantiate `Label`.
 pub struct RealLabel {
-    binding : Rc<Binding>,
+    binding: Rc<Binding>,
 }
 
 impl fmt::Debug for RealLabel {
@@ -223,11 +230,11 @@ pub trait LabelMaker {
     /// Create an undefined label.
     fn new() -> Self;
     /// Create a label with a constant value `val`.
-    fn from_const(val : u64) -> Self;
+    fn from_const(val: u64) -> Self;
     /// Create a label whose value is equal to `other`.
-    fn from_label(other : &Self) -> Self;
+    fn from_label(other: &Self) -> Self;
     /// Create a label whose value is equal to `other` plus `offset`.
-    fn from_label_offset(other : &Self, offset : i64) -> Self;
+    fn from_label_offset(other: &Self, offset: i64) -> Self;
 }
 
 impl RealLabel {
@@ -236,16 +243,16 @@ impl RealLabel {
         self.binding.value()
     }
     /// Get the relative offset from another label, if possible.
-    pub fn offset(&self, other : &RealLabel) -> Option<i64> {
+    pub fn offset(&self, other: &RealLabel) -> Option<i64> {
         // Let the Binding calculate the offset.
         self.binding.offset(&other.binding)
     }
     /// Set this `RealLabel`s value to `val`.
-    pub fn set_const(&self, val : u64) {
+    pub fn set_const(&self, val: u64) {
         self.binding.set_const(val);
     }
     /// Set this `RealLabel`s value equal to `other`.
-    pub fn set(&self, other : &RealLabel) {
+    pub fn set(&self, other: &RealLabel) {
         //TODO: could use some sanity checks here?
         self.binding.set(other.binding.clone())
     }
@@ -253,16 +260,24 @@ impl RealLabel {
 
 impl LabelMaker for RealLabel {
     fn new() -> RealLabel {
-        RealLabel { binding: Rc::new(Binding::unconstrained()) }
+        RealLabel {
+            binding: Rc::new(Binding::unconstrained()),
+        }
     }
-    fn from_const(val : u64) -> RealLabel {
-        RealLabel { binding: Rc::new(Binding::constant(val)) }
+    fn from_const(val: u64) -> RealLabel {
+        RealLabel {
+            binding: Rc::new(Binding::constant(val)),
+        }
     }
-    fn from_label(other : &RealLabel) -> RealLabel {
-        RealLabel { binding: other.binding.clone() }
+    fn from_label(other: &RealLabel) -> RealLabel {
+        RealLabel {
+            binding: other.binding.clone(),
+        }
     }
-    fn from_label_offset(other : &RealLabel, offset : i64) -> RealLabel {
-        RealLabel { binding: Rc::new(Binding::from(other.binding.clone(), offset)) }
+    fn from_label_offset(other: &RealLabel, offset: i64) -> RealLabel {
+        RealLabel {
+            binding: Rc::new(Binding::from(other.binding.clone(), offset)),
+        }
     }
 }
 
@@ -320,16 +335,19 @@ impl LabelMaker for Label {
     fn new() -> Label {
         Label(Rc::new(RealLabel::new()))
     }
-    fn from_const(val : u64) -> Label {
+    fn from_const(val: u64) -> Label {
         Label(Rc::new(RealLabel::from_const(val)))
     }
-    fn from_label(other : &Label) -> Label {
+    fn from_label(other: &Label) -> Label {
         let &Label(ref inner) = other;
         Label(Rc::new(RealLabel::from_label(inner.borrow())))
     }
-    fn from_label_offset(other : &Label, offset : i64) -> Label {
+    fn from_label_offset(other: &Label, offset: i64) -> Label {
         let &Label(ref inner) = other;
-        Label(Rc::new(RealLabel::from_label_offset(inner.borrow(), offset)))
+        Label(Rc::new(RealLabel::from_label_offset(
+            inner.borrow(),
+            offset,
+        )))
     }
 }
 
@@ -375,29 +393,29 @@ impl Num for u32 {}
 impl Num for u64 {}
 
 /// An enum to hold `Label`s or `Num`s.
-pub enum LabelOrNum<T : Num> {
+pub enum LabelOrNum<T: Num> {
     Label(Label),
     Num(T),
 }
 
 /// A trait to allow passing numbers or Labels.
-pub trait ToLabelOrNum<'a, T : Num> {
+pub trait ToLabelOrNum<'a, T: Num> {
     fn to_labelornum(self) -> LabelOrNum<T>;
 }
 
-impl<'a, T : Num> ToLabelOrNum<'a, T> for Label {
+impl<'a, T: Num> ToLabelOrNum<'a, T> for Label {
     fn to_labelornum(self) -> LabelOrNum<T> {
         LabelOrNum::Label(self)
     }
 }
 
-impl<'a, T : Num> ToLabelOrNum<'a, T> for &'a Label {
+impl<'a, T: Num> ToLabelOrNum<'a, T> for &'a Label {
     fn to_labelornum(self) -> LabelOrNum<T> {
         LabelOrNum::Label(self.clone())
     }
 }
 
-impl<'a, T : Num> ToLabelOrNum<'a, T> for T {
+impl<'a, T: Num> ToLabelOrNum<'a, T> for T {
     fn to_labelornum(self) -> LabelOrNum<T> {
         LabelOrNum::Num(self)
     }
@@ -407,13 +425,13 @@ impl<'a, T : Num> ToLabelOrNum<'a, T> for T {
 #[derive(Clone)]
 struct Reference {
     /// The `Label` being referenced.
-    label : Label,
+    label: Label,
     /// The offset of the reference within the `Section`.
-    offset : u64,
+    offset: u64,
     /// The endianness with which the `Label` should be stored.
-    endian : Endian,
+    endian: Endian,
     /// The size with which the `Label` should be stored.
-    size : usize,
+    size: usize,
 }
 
 /// A section is a sequence of bytes, constructed by appending bytes to the end.
@@ -442,7 +460,7 @@ pub struct Section {
     /// The current endianness of the writer.
     ///
     /// This sets the behavior of the D<N> appending functions.
-    pub endian : Endian,
+    pub endian: Endian,
     /// The contents of the section.
     contents: Cursor<Vec<u8>>,
     /// References to `Label`s that were added to this `Section`.
@@ -460,11 +478,11 @@ impl Section {
     }
 
     /// Construct a `Section` with `endian` endianness.
-    pub fn with_endian(endian : Endian) -> Section {
+    pub fn with_endian(endian: Endian) -> Section {
         Section {
             endian: endian,
-            contents: Cursor::new(vec!()),
-            references: vec!(),
+            contents: Cursor::new(vec![]),
+            references: vec![],
             start: Label::new(),
             final_size: Label::new(),
         }
@@ -490,16 +508,16 @@ impl Section {
         // Patch all labels into the section's contents.
         let mut section = self;
         section.final_size.set_const(section.size());
-        let references : Vec<Reference> = section.references.iter().cloned().collect();
+        let references: Vec<Reference> = section.references.iter().cloned().collect();
         let mut ok = true;
         section = references.iter().cloned().fold(section, |s, r| {
-                if let Some(val) = r.label.value() {
-                    s.store_label_value(val, r.offset, r.endian, r.size)
-                } else {
-                    ok = false;
-                    s
-                }
-            });
+            if let Some(val) = r.label.value() {
+                s.store_label_value(val, r.offset, r.endian, r.size)
+            } else {
+                ok = false;
+                s
+            }
+        });
         if ok {
             Some(section.contents.into_inner())
         } else {
@@ -531,7 +549,7 @@ impl Section {
     }
 
     /// Set `label` to Here, and return this section.
-    pub fn mark(self, label : &Label) -> Section {
+    pub fn mark(self, label: &Label) -> Section {
         label.set(&self.here());
         self
     }
@@ -539,7 +557,7 @@ impl Section {
     /// Append `data` to the end of this section.
     ///
     /// Return this section.
-    pub fn append_bytes(mut self, data : &[u8]) -> Section {
+    pub fn append_bytes(mut self, data: &[u8]) -> Section {
         self.contents.write_all(data).unwrap();
         self
     }
@@ -550,7 +568,12 @@ impl Section {
     /// resolved until this section is finalized.
     /// Return this section.
     pub fn append_section<S: Into<Section>>(mut self, section: S) -> Section {
-        let Section { contents, references, final_size, .. } = section.into();
+        let Section {
+            contents,
+            references,
+            final_size,
+            ..
+        } = section.into();
         final_size.set_const(contents.get_ref().len() as u64);
         let current = self.size();
         self.contents.write_all(&contents.into_inner()).unwrap();
@@ -564,7 +587,7 @@ impl Section {
     /// Append `count` copies of `byte` to the end of this section.
     ///
     /// Return this section.
-    pub fn append_repeated(mut self, byte : u8, count : usize) -> Section {
+    pub fn append_repeated(mut self, byte: u8, count: usize) -> Section {
         for _ in 0..count {
             self.contents.write_u8(byte).unwrap();
         }
@@ -575,7 +598,7 @@ impl Section {
     ///
     /// Fill the gap with zeroes. `alignment` must be a power of two.
     /// Return this section.
-    pub fn align(self, alignment : u64) -> Section {
+    pub fn align(self, alignment: u64) -> Section {
         // `alignment` must be a power of two.
         assert!(((alignment - 1) & alignment) == 0);
         let new_size = (self.size() + alignment - 1) & !(alignment - 1);
@@ -583,33 +606,25 @@ impl Section {
         self.append_repeated(0, add as usize)
     }
 
-    fn store_label_value(mut self,
-                         val : u64,
-                         offset : u64,
-                         endian: Endian,
-                         size: usize) -> Section {
+    fn store_label_value(mut self, val: u64, offset: u64, endian: Endian, size: usize) -> Section {
         let current = self.size();
         if offset != current {
             self.contents.seek(SeekFrom::Start(offset)).unwrap();
         }
         match endian {
-            Endian::Little => {
-                match size {
-                    1 => self.L8(val as u8),
-                    2 => self.L16(val as u16),
-                    4 => self.L32(val as u32),
-                    8 => self.L64(val),
-                    _ => unreachable!("Unhandled label size!"),
-                }
+            Endian::Little => match size {
+                1 => self.L8(val as u8),
+                2 => self.L16(val as u16),
+                4 => self.L32(val as u32),
+                8 => self.L64(val),
+                _ => unreachable!("Unhandled label size!"),
             },
-            Endian::Big => {
-                match size {
-                    1 => self.B8(val as u8),
-                    2 => self.B16(val as u16),
-                    4 => self.B32(val as u32),
-                    8 => self.B64(val),
-                    _ => unreachable!("Unhandled label size!"),
-                }
+            Endian::Big => match size {
+                1 => self.B8(val as u8),
+                2 => self.B16(val as u16),
+                4 => self.B32(val as u32),
+                8 => self.B64(val),
+                _ => unreachable!("Unhandled label size!"),
             },
         }
     }
@@ -617,10 +632,7 @@ impl Section {
     /// Append `label` to the Section with `endian` endianness, taking `size` bytes.
     ///
     /// Panics if `size` is not an intrinsic integer size: 1, 2, 4, 8 bytes.
-    fn append_label(mut self,
-                    label : &Label,
-                    endian : Endian,
-                    size : usize) -> Section {
+    fn append_label(mut self, label: &Label, endian: Endian, size: usize) -> Section {
         let current = self.size();
         // For labels with a known value, don't bother with a reference.
         if let Some(val) = label.value() {
@@ -642,45 +654,49 @@ impl Section {
     ///
     /// `byte` may be a `Label` or a `u8`.
     /// Return this section.
-    pub fn D8<'a, T : ToLabelOrNum<'a, u8>>(mut self, byte : T) -> Section {
+    pub fn D8<'a, T: ToLabelOrNum<'a, u8>>(mut self, byte: T) -> Section {
         let endian = self.endian;
         match byte.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u8(n).unwrap();
                 self
-            },
+            }
             LabelOrNum::Label(l) => self.append_label(&l, endian, 1),
         }
     }
     /// Append `byte` as little-endian (identical to `D8`).
     ///
     /// Return this section.
-    pub fn L8<'a, T : ToLabelOrNum<'a, u8>>(self, byte : T) -> Section { self.D8(byte) }
+    pub fn L8<'a, T: ToLabelOrNum<'a, u8>>(self, byte: T) -> Section {
+        self.D8(byte)
+    }
     /// Append `byte` as big-endian (identical to `D8`).
     ///
     /// Return this section.
-    pub fn B8<'a, T : ToLabelOrNum<'a, u8>>(self, byte : T) -> Section { self.D8(byte) }
+    pub fn B8<'a, T: ToLabelOrNum<'a, u8>>(self, byte: T) -> Section {
+        self.D8(byte)
+    }
 
     /// Append `word` with the Section's default endianness.
     ///
     /// `word` may be a `Label` or a `u16`.
     /// Return this section.
-    pub fn D16<'a, T : ToLabelOrNum<'a, u16>>(self, word : T) -> Section {
+    pub fn D16<'a, T: ToLabelOrNum<'a, u16>>(self, word: T) -> Section {
         match self.endian {
             Endian::Little => self.L16(word),
-            Endian::Big => self.B16(word)
+            Endian::Big => self.B16(word),
         }
     }
     /// Append `word` as little-endian.
     ///
     /// `word` may be a `Label` or a `u16`.
     /// Return this section.
-    pub fn L16<'a, T : ToLabelOrNum<'a, u16>>(mut self, word : T) -> Section {
+    pub fn L16<'a, T: ToLabelOrNum<'a, u16>>(mut self, word: T) -> Section {
         match word.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u16::<LittleEndian>(n).unwrap();
                 self
-            },
+            }
             LabelOrNum::Label(l) => self.append_label(&l, Endian::Little, 2),
         }
     }
@@ -688,12 +704,12 @@ impl Section {
     ///
     /// `word` may be a `Label` or a `u16`.
     /// Return this section.
-    pub fn B16<'a, T : ToLabelOrNum<'a, u16>>(mut self, word : T) -> Section {
+    pub fn B16<'a, T: ToLabelOrNum<'a, u16>>(mut self, word: T) -> Section {
         match word.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u16::<BigEndian>(n).unwrap();
                 self
-            },
+            }
             LabelOrNum::Label(l) => self.append_label(&l, Endian::Big, 2),
         }
     }
@@ -702,22 +718,22 @@ impl Section {
     ///
     /// `dword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn D32<'a, T : ToLabelOrNum<'a, u32>>(self, dword : T) -> Section {
+    pub fn D32<'a, T: ToLabelOrNum<'a, u32>>(self, dword: T) -> Section {
         match self.endian {
             Endian::Little => self.L32(dword),
-            Endian::Big => self.B32(dword)
+            Endian::Big => self.B32(dword),
         }
     }
     /// Append `dword` as little-endian.
     ///
     /// `dword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn L32<'a, T : ToLabelOrNum<'a, u32>>(mut self, dword : T) -> Section {
+    pub fn L32<'a, T: ToLabelOrNum<'a, u32>>(mut self, dword: T) -> Section {
         match dword.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u32::<LittleEndian>(n).unwrap();
                 self
-            },
+            }
             LabelOrNum::Label(l) => self.append_label(&l, Endian::Little, 4),
         }
     }
@@ -725,12 +741,12 @@ impl Section {
     ///
     /// `dword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn B32<'a, T : ToLabelOrNum<'a, u32>>(mut self, dword : T) -> Section {
+    pub fn B32<'a, T: ToLabelOrNum<'a, u32>>(mut self, dword: T) -> Section {
         match dword.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u32::<BigEndian>(n).unwrap();
                 self
-            },
+            }
             LabelOrNum::Label(l) => self.append_label(&l, Endian::Big, 4),
         }
     }
@@ -739,22 +755,22 @@ impl Section {
     ///
     /// `qword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn D64<'a, T : ToLabelOrNum<'a, u64>>(self, qword : T) -> Section {
+    pub fn D64<'a, T: ToLabelOrNum<'a, u64>>(self, qword: T) -> Section {
         match self.endian {
             Endian::Little => self.L64(qword),
-            Endian::Big => self.B64(qword)
+            Endian::Big => self.B64(qword),
         }
     }
     /// Append `qword` as little-endian.
     ///
     /// `qword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn L64<'a, T : ToLabelOrNum<'a, u64>>(mut self, qword : T) -> Section {
+    pub fn L64<'a, T: ToLabelOrNum<'a, u64>>(mut self, qword: T) -> Section {
         match qword.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u64::<LittleEndian>(n).unwrap();
                 self
-            },
+            }
             LabelOrNum::Label(l) => self.append_label(&l, Endian::Little, 8),
         }
     }
@@ -762,12 +778,12 @@ impl Section {
     ///
     /// `qword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn B64<'a, T : ToLabelOrNum<'a, u64>>(mut self, qword : T) -> Section {
+    pub fn B64<'a, T: ToLabelOrNum<'a, u64>>(mut self, qword: T) -> Section {
         match qword.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u64::<BigEndian>(n).unwrap();
                 self
-            },
+            }
             LabelOrNum::Label(l) => self.append_label(&l, Endian::Big, 8),
         }
     }
@@ -943,8 +959,13 @@ fn section_append_bytes() {
     let s = Section::new();
     let b1 = [0, 1, 2, 3, 4];
     let b2 = [0xf, 0xe, 0xd, 0xc, 0xb];
-    assert_eq!(s.append_bytes(&b1).append_bytes(&b2).get_contents().unwrap(),
-               &[0, 1, 2, 3, 4, 0xf, 0xe, 0xd, 0xc, 0xb]);
+    assert_eq!(
+        s.append_bytes(&b1)
+            .append_bytes(&b2)
+            .get_contents()
+            .unwrap(),
+        &[0, 1, 2, 3, 4, 0xf, 0xe, 0xd, 0xc, 0xb]
+    );
 }
 
 #[test]
@@ -957,12 +978,15 @@ fn section_final_size() {
 
 #[test]
 fn section_append_section_simple() {
-    assert_eq!(Section::new()
-               .D8(0xab)
-               .append_section(Section::new().D8(0xcd))
-               .D8(0xef)
-               .get_contents().unwrap(),
-               &[0xab, 0xcd, 0xef]);
+    assert_eq!(
+        Section::new()
+            .D8(0xab)
+            .append_section(Section::new().D8(0xcd))
+            .D8(0xef)
+            .get_contents()
+            .unwrap(),
+        &[0xab, 0xcd, 0xef]
+    );
 }
 
 #[test]
@@ -972,121 +996,138 @@ fn section_append_section_labels() {
     let l2 = Label::new();
     s = s.D8(0xab);
     {
-        s = s.append_section(Section::new()
-                             .D8(0xcd)
-                             .D8(&l1)
-                             .D8(&l2));
+        s = s.append_section(Section::new().D8(0xcd).D8(&l1).D8(&l2));
     }
     s = s.D8(0xef);
     l2.set_const(0x34);
-    assert_eq!(s.get_contents().unwrap(),
-               &[0xab, 0xcd, 0x12, 0x34, 0xef]);
+    assert_eq!(s.get_contents().unwrap(), &[0xab, 0xcd, 0x12, 0x34, 0xef]);
 }
 
 #[test]
 fn section_append_section_final_size() {
     let s = Section::new().D8(0xcd);
-    assert_eq!(Section::new()
-               .D8(0xab)
-               .D8(s.final_size())
-               .append_section(s)
-               .D8(0xef)
-               .get_contents().unwrap(),
-               &[0xab, 1, 0xcd, 0xef]);
+    assert_eq!(
+        Section::new()
+            .D8(0xab)
+            .D8(s.final_size())
+            .append_section(s)
+            .D8(0xef)
+            .get_contents()
+            .unwrap(),
+        &[0xab, 1, 0xcd, 0xef]
+    );
 }
 
 #[test]
 fn section_append_repeated() {
     let s = Section::new();
-    assert_eq!(s.append_repeated(0xff, 5).get_contents().unwrap(),
-               &[0xff, 0xff, 0xff, 0xff, 0xff]);
+    assert_eq!(
+        s.append_repeated(0xff, 5).get_contents().unwrap(),
+        &[0xff, 0xff, 0xff, 0xff, 0xff]
+    );
 }
-
 
 #[test]
 fn section_align() {
     let s = Section::new();
-    assert_eq!(s.D8(1).align(8).D8(1).get_contents().unwrap(),
-               &[1, 0, 0, 0, 0, 0, 0, 0, 1]);
+    assert_eq!(
+        s.D8(1).align(8).D8(1).get_contents().unwrap(),
+        &[1, 0, 0, 0, 0, 0, 0, 0, 1]
+    );
 }
 
 #[test]
 fn section_test_8() {
     let s = Section::new();
-    assert_eq!(s.D8(0x12).L8(0x12).B8(0x12).get_contents().unwrap(),
-               &[0x12, 0x12, 0x12]);
+    assert_eq!(
+        s.D8(0x12).L8(0x12).B8(0x12).get_contents().unwrap(),
+        &[0x12, 0x12, 0x12]
+    );
 }
 
 #[test]
 fn section_test_16() {
     let s = Section::with_endian(Endian::Little);
-    assert_eq!(s.D16(0xABCD).L16(0xABCD).B16(0xABCD).get_contents().unwrap(),
-               &[0xCD, 0xAB,
-                 0xCD, 0xAB,
-                 0xAB, 0xCD]);
+    assert_eq!(
+        s.D16(0xABCD)
+            .L16(0xABCD)
+            .B16(0xABCD)
+            .get_contents()
+            .unwrap(),
+        &[0xCD, 0xAB, 0xCD, 0xAB, 0xAB, 0xCD]
+    );
 }
 
 #[test]
 fn section_test_32() {
     let s = Section::with_endian(Endian::Little);
-    assert_eq!(s.D32(0xABCD1234).L32(0xABCD1234).B32(0xABCD1234)
-               .get_contents().unwrap(),
-               &[0x34, 0x12, 0xCD, 0xAB,
-                 0x34, 0x12, 0xCD, 0xAB,
-                 0xAB, 0xCD, 0x12, 0x34]);
+    assert_eq!(
+        s.D32(0xABCD1234)
+            .L32(0xABCD1234)
+            .B32(0xABCD1234)
+            .get_contents()
+            .unwrap(),
+        &[0x34, 0x12, 0xCD, 0xAB, 0x34, 0x12, 0xCD, 0xAB, 0xAB, 0xCD, 0x12, 0x34]
+    );
 }
 
 #[test]
 fn section_test_64() {
     let s = Section::with_endian(Endian::Little);
-    assert_eq!(s.D64(0x12345678ABCDEFFF)
-               .L64(0x12345678ABCDEFFF)
-               .B64(0x12345678ABCDEFFF)
-               .get_contents().unwrap(),
-               &[0xFF, 0xEF, 0xCD, 0xAB, 0x78, 0x56, 0x34, 0x12,
-                 0xFF, 0xEF, 0xCD, 0xAB, 0x78, 0x56, 0x34, 0x12,
-                 0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF, 0xFF]);
+    assert_eq!(
+        s.D64(0x12345678ABCDEFFF)
+            .L64(0x12345678ABCDEFFF)
+            .B64(0x12345678ABCDEFFF)
+            .get_contents()
+            .unwrap(),
+        &[
+            0xFF, 0xEF, 0xCD, 0xAB, 0x78, 0x56, 0x34, 0x12, 0xFF, 0xEF, 0xCD, 0xAB, 0x78, 0x56,
+            0x34, 0x12, 0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF, 0xFF
+        ]
+    );
 }
-
 
 #[test]
 fn section_d8l_const_label() {
     let l = Label::from_const(10);
     let s = Section::with_endian(Endian::Little);
-    assert_eq!(s.D8(&l).L8(&l).B8(&l)
-               .get_contents().unwrap(),
-               &[10, 10, 10]);
+    assert_eq!(
+        s.D8(&l).L8(&l).B8(&l).get_contents().unwrap(),
+        &[10, 10, 10]
+    );
 }
 
 #[test]
 fn section_d16l_const_label() {
     let l = Label::from_const(0xABCD);
     let s = Section::with_endian(Endian::Little);
-    assert_eq!(s.D16(&l).L16(&l).B16(&l)
-               .get_contents().unwrap(),
-               &[0xCD, 0xAB, 0xCD, 0xAB, 0xAB, 0xCD]);
+    assert_eq!(
+        s.D16(&l).L16(&l).B16(&l).get_contents().unwrap(),
+        &[0xCD, 0xAB, 0xCD, 0xAB, 0xAB, 0xCD]
+    );
 }
 
 #[test]
 fn section_d32l_const_label() {
     let l = Label::from_const(0xABCD1234);
     let s = Section::with_endian(Endian::Little);
-    assert_eq!(s.D32(&l).L32(&l).B32(&l)
-               .get_contents().unwrap(),
-               &[0x34, 0x12, 0xCD, 0xAB,
-                 0x34, 0x12, 0xCD, 0xAB,
-                 0xAB, 0xCD, 0x12, 0x34]);
+    assert_eq!(
+        s.D32(&l).L32(&l).B32(&l).get_contents().unwrap(),
+        &[0x34, 0x12, 0xCD, 0xAB, 0x34, 0x12, 0xCD, 0xAB, 0xAB, 0xCD, 0x12, 0x34]
+    );
 }
 
 #[test]
 fn section_d64l_const_label() {
     let l = Label::from_const(0xABCD12345678F00D);
     let s = Section::with_endian(Endian::Little);
-    assert_eq!(s.D64(&l).L64(&l).B64(&l)
-               .get_contents().unwrap(),
-               &[0x0D, 0xF0, 0x78, 0x56, 0x34, 0x12, 0xCD, 0xAB,
-                 0x0D, 0xF0, 0x78, 0x56, 0x34, 0x12, 0xCD, 0xAB,
-                 0xAB, 0xCD, 0x12, 0x34, 0x56, 0x78, 0xF0, 0x0D]);
+    assert_eq!(
+        s.D64(&l).L64(&l).B64(&l).get_contents().unwrap(),
+        &[
+            0x0D, 0xF0, 0x78, 0x56, 0x34, 0x12, 0xCD, 0xAB, 0x0D, 0xF0, 0x78, 0x56, 0x34, 0x12,
+            0xCD, 0xAB, 0xAB, 0xCD, 0x12, 0x34, 0x56, 0x78, 0xF0, 0x0D
+        ]
+    );
 }
 
 #[test]
@@ -1105,8 +1146,7 @@ fn section_label_assign_late() {
     s = s.D8(&l).L8(&l).B8(&l);
     // Now assign a value to l.
     l.set_const(10);
-    assert_eq!(s.get_contents().unwrap(),
-               &[10, 10, 10]);
+    assert_eq!(s.get_contents().unwrap(), &[10, 10, 10]);
 }
 
 #[test]
@@ -1144,8 +1184,15 @@ fn section_additional_methods_trait() {
         }
     }
 
-    assert_eq!(Section::new().D8(0).add_a_thing().D8(1).get_contents().unwrap(),
-               &[0, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 1]);
+    assert_eq!(
+        Section::new()
+            .D8(0)
+            .add_a_thing()
+            .D8(1)
+            .get_contents()
+            .unwrap(),
+        &[0, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 1]
+    );
 }
 
 #[test]
@@ -1153,9 +1200,7 @@ fn test_simple_labels() {
     let start = Label::new();
     let end = Label::new();
 
-    let _section = Section::new()
-        .mark(&start)
-        .mark(&end);
+    let _section = Section::new().mark(&start).mark(&end);
 
     assert_eq!(start.offset(&end), Some(0));
 }
@@ -1167,20 +1212,24 @@ fn test_set_start_const() {
         .set_start_const(0)
         .append_repeated(0, 10)
         .mark(&l)
-        .get_contents().unwrap();
+        .get_contents()
+        .unwrap();
     assert_eq!(l.value().unwrap(), 10);
 }
 
 #[test]
 fn section_bigendian_defaults() {
     let s = Section::with_endian(Endian::Big);
-    assert_eq!(s.D8(0x12)
-               .D16(0x1234)
-               .D32(0x12345678)
-               .D64(0x12345678ABCDEFFF)
-               .get_contents().unwrap(),
-               &[0x12,
-                 0x12, 0x34,
-                 0x12, 0x34, 0x56, 0x78,
-                 0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF, 0xFF]);
+    assert_eq!(
+        s.D8(0x12)
+            .D16(0x1234)
+            .D32(0x12345678)
+            .D64(0x12345678ABCDEFFF)
+            .get_contents()
+            .unwrap(),
+        &[
+            0x12, 0x12, 0x34, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF,
+            0xFF
+        ]
+    );
 }
