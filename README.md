@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/luser/rust-test-assembler.svg?branch=master)](https://travis-ci.org/luser/rust-test-assembler) [![Coverage Status](https://coveralls.io/repos/github/luser/rust-test-assembler/badge.svg?branch=master)](https://coveralls.io/github/luser/rust-test-assembler?branch=master) [![crates.io](https://img.shields.io/crates/v/test-assembler.svg)](https://crates.io/crates/test-assembler) [![](https://docs.rs/test-assembler/badge.svg)](https://docs.rs/test-assembler)
+![Continuous integration](https://github.com/luser/rust-test-assembler/workflows/Continuous%20integration/badge.svg) (https://coveralls.io/github/luser/rust-test-assembler?branch=master) [![crates.io](https://img.shields.io/crates/v/test-assembler.svg)](https://crates.io/crates/test-assembler) [![](https://docs.rs/test-assembler/badge.svg)](https://docs.rs/test-assembler)
 
 # Overview
 
