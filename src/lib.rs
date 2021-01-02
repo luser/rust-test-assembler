@@ -211,9 +211,7 @@ impl Binding {
             BindingValue::Constant(c) => Some(c),
             // If this Binding is based on another Binding, ask it for its
             // value.
-            BindingValue::From(ref base, addend) => {
-                base.value().map(|v| v + addend as u64)
-            }
+            BindingValue::From(ref base, addend) => base.value().map(|v| v + addend as u64),
             // If this Binding is unconstrained then its value is not known.
             _ => None,
         }
