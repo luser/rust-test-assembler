@@ -1,4 +1,4 @@
-![Continuous integration](https://github.com/luser/rust-test-assembler/workflows/Continuous%20integration/badge.svg) [![crates.io](https://img.shields.io/crates/v/test-assembler.svg)](https://crates.io/crates/test-assembler) [![](https://docs.rs/test-assembler/badge.svg)](https://docs.rs/test-assembler)
+[![Continuous integration](https://github.com/luser/rust-test-assembler/actions/workflows/rust.yml/badge.svg)](https://github.com/luser/rust-test-assembler/actions/workflows/rust.yml) [![crates.io](https://img.shields.io/crates/v/test-assembler.svg)](https://crates.io/crates/test-assembler) [![](https://docs.rs/test-assembler/badge.svg)](https://docs.rs/test-assembler)
 
 # Overview
 
