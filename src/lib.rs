@@ -9,22 +9,31 @@
 //! allows for easily building a stream of bytes in any desired
 //! endianness.
 //!
-//! This crate defines two useful structs: [`Section`][Section] and
-//! [`Label`][Label]. A `Section` is simply a stream of bytes which can
+//! This crate defines two useful structs: [`Section`] and
+//! [`Label`]. A `Section` is simply a stream of bytes which can
 //! be written to, and a `Label` is a placeholder for a value that can be
 //! computed based on other values, but can be written to a `Section` without
 //! knowing its value at that time.
 //!
-//! [Section]: struct.Section.html
-//! [Label]: struct.Label.html
-//!
-//! Based on [Jim Blandy's fantastic C++ implementation][1] in Google Breakpad.
+//! This crate is based on [Jim Blandy's fantastic C++ implementation][1] in Google Breakpad.
 //!
 //! [1]: https://chromium.googlesource.com/breakpad/breakpad/+/master/src/common/test_assembler.h
 //!
 //! # Examples
 //!
-//! The `Section` methods for writing data all consume and return the `Section`
+//! `Section` provides many convenient methods for appending data of specific endianness and byte width. There are methods for appending 8, 16, 32, and 64-bit integers using the `Section`'s default  endianness, or explicitly using big or little-endian byte ordering. These methods all have shorthand names of the form:
+//!
+//! `[endianness][bits]`
+//!
+//! Where `endianness` is one of:
+//! * `D`: The `Section`'s default endianness
+//! * `L`: little-endian
+//! * `B`: big-endian
+//! And `bits` is any of 8, 16, 32, or 64 to write an integer from 1 to 8 bytes in length.
+//!
+//! So, for example, to write a little-endian 32-bit integer, call [`L32`](struct.Section.html#method.L32).
+//!
+//! The `Section` methods for appending data all consume and return the `Section`
 //! so that they can be chained:
 //!
 //! ```
@@ -37,7 +46,7 @@
 //! ```
 //!
 //! `Label`s can be appended to a section as placeholders for values that
-//! are not yet known using the same methods.
+//! are not yet known using the same methods:
 //!
 //! ```
 //! use test_assembler::*;
@@ -52,7 +61,7 @@
 //! ```
 //!
 //! `Label`s can also be set to the current length of the `Section` by calling
-//! [`mark`][mark]:
+//! [`mark`][mark], which is useful for calculating an offset into the data:
 //!
 //! [mark]: struct.Section.html#method.mark
 //!
@@ -218,7 +227,7 @@ impl Binding {
     }
 }
 
-/// The inner workings of `Label`. Don't instantiate this, instantiate `Label`.
+#[doc(hidden)]
 pub struct RealLabel {
     binding: Rc<Binding>,
 }
@@ -301,6 +310,12 @@ impl LabelMaker for RealLabel {
 /// Subtracting a constant from a label is permitted, and also yields a
 /// label. Subtracting two labels that have some relationship to each
 /// other is permitted, and yields a constant.
+///
+/// A common usage of `Label` is to use [`Section::mark`] to make a `Label`
+/// contain an offset into the `Section` without having to hard-code it.
+/// The `Section` methods for inserting fixed-width integer values (such as
+/// [`Section::L32`]) all accept `&Label` for the purpose of writing a value
+/// that is not yet available.
 ///
 /// # Examples
 ///
@@ -535,32 +550,30 @@ impl Section {
     /// position in an object file, the section's address in memory, or
     /// what have you; some applications may need both, in which case
     /// this simple-minded interface won't be enough. This class only
-    /// provides a single start label, for use with the Here and Mark
-    /// member functions.
+    /// provides a single start label, for use with the `here` and `mark`
+    /// methods.
     pub fn start(&self) -> Label {
         self.start.clone()
     }
 
-    /// A label representing the point at which the next Appended item will appear in the section, relative to start().
+    /// A label representing the point at which the next appended item will appear in the section, relative to `start`.
     pub fn here(&self) -> Label {
         &self.start + self.size() as i64
     }
 
-    /// Set the value of `start()` to `value`.
+    /// Set the value of `start` to `value`.
     pub fn set_start_const(self, value: u64) -> Section {
         self.start.set_const(value);
         self
     }
 
-    /// Set `label` to Here, and return this section.
+    /// Set `label` to [`here`](#method.here), and return this section.
     pub fn mark(self, label: &Label) -> Section {
         label.set(&self.here());
         self
     }
 
-    /// Append `data` to the end of this section.
-    ///
-    /// Return this section.
+    /// Append `data` to the end of this section, and return this section.
     pub fn append_bytes(mut self, data: &[u8]) -> Section {
         self.contents.write_all(data).unwrap();
         self

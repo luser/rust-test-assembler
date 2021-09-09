@@ -1,15 +1,11 @@
 [package]
 name = "test-assembler"
 description = "A set of types for building complex binary streams."
-version = "0.1.5"
+version = "0.1.6-alpha.0"
 authors = ["Ted Mielczarek <ted@mielczarek.org>"]
 license = "MIT"
-documentation = "http://luser.github.io/rust-project-docs/test-assembler/test_assembler/"
 homepage = "https://github.com/luser/rust-test-assembler"
 repository = "https://github.com/luser/rust-test-assembler"
-exclude = [
-    "scripts/*",
-]
 
 [dependencies]
 byteorder = "1"
