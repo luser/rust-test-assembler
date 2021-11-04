@@ -812,447 +812,452 @@ impl Default for Section {
     }
 }
 
-#[test]
-fn binding_offset() {
-    let b_u = Rc::new(Binding::unconstrained());
-    let b_c = Rc::new(Binding::constant(1));
-    let b_f1 = Rc::new(Binding::from(b_u.clone(), 0));
-    // b_f1 is equal to b_u, so the offset should be zero.
-    assert_eq!(b_f1.offset(&b_u).unwrap(), 0);
-    // b_f1 and b_c are unrelated
-    assert!(b_f1.offset(&b_c).is_none());
-    // as are b_u and b_c.
-    assert!(b_u.offset(&b_c).is_none());
-    assert!(b_c.offset(&b_u).is_none());
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    let b_f2 = Rc::new(Binding::from(b_c.clone(), 10));
-    // b_f2 is a non-zero offset from b_c.
-    assert_eq!(b_f2.offset(&b_c).unwrap(), 10);
-    // We need to go deeper.
-    let b_f3 = Rc::new(Binding::from(b_f1.clone(), 10));
-    assert_eq!(b_f3.offset(&b_u).unwrap(), 10);
-    let b_f4 = Rc::new(Binding::from(b_f3.clone(), 10));
-    assert_eq!(b_f4.offset(&b_u).unwrap(), 20);
-    // Make another chain of bindings so we can test that the leaves of
-    // both chains compare properly.
-    // <INCEPTION HORN>
-    let b_f5 = Rc::new(Binding::from(b_u.clone(), 10));
-    let b_f6 = Rc::new(Binding::from(b_f5.clone(), 10));
-    assert_eq!(b_f6.offset(&b_f5).unwrap(), 10);
-    assert_eq!(b_f6.offset(&b_u).unwrap(), 20);
-    // Now for the kicker, b_f6 and b_f4 should be the same value, since
-    // they're both b_u + 20.
-    assert_eq!(b_f6.offset(&b_f4).unwrap(), 0);
-    // and some additional checks.
-    assert_eq!(b_f6.offset(&b_f3).unwrap(), 10);
-    assert_eq!(b_f3.offset(&b_f6).unwrap(), -10);
-}
+    #[test]
+    fn binding_offset() {
+        let b_u = Rc::new(Binding::unconstrained());
+        let b_c = Rc::new(Binding::constant(1));
+        let b_f1 = Rc::new(Binding::from(b_u.clone(), 0));
+        // b_f1 is equal to b_u, so the offset should be zero.
+        assert_eq!(b_f1.offset(&b_u).unwrap(), 0);
+        // b_f1 and b_c are unrelated
+        assert!(b_f1.offset(&b_c).is_none());
+        // as are b_u and b_c.
+        assert!(b_u.offset(&b_c).is_none());
+        assert!(b_c.offset(&b_u).is_none());
 
-#[test]
-fn binding_value() {
-    let b_u = Rc::new(Binding::unconstrained());
-    let b_c = Rc::new(Binding::constant(1));
-    let b_f1 = Rc::new(Binding::from(b_u.clone(), 0));
-    assert!(b_u.value().is_none());
-    assert_eq!(b_c.value().unwrap(), 1);
-    assert!(b_f1.value().is_none());
-
-    let b_f2 = Rc::new(Binding::from(b_c.clone(), 10));
-    assert_eq!(b_f2.value().unwrap(), 11);
-    // We need to go deeper.
-    let b_f3 = Rc::new(Binding::from(b_f1.clone(), 10));
-    assert!(b_f3.value().is_none());
-    let b_f4 = Rc::new(Binding::from(b_f3.clone(), 10));
-    assert!(b_f4.value().is_none());
-
-    let b_f5 = Rc::new(Binding::from(b_f2.clone(), 10));
-    assert_eq!(b_f5.value().unwrap(), 21);
-}
-
-#[test]
-fn label_unconstrained() {
-    let l = Label::new();
-    assert!(l.value().is_none());
-}
-
-#[test]
-fn label_const() {
-    let l = Label::from_const(10);
-    assert_eq!(l.value().unwrap(), 10);
-}
-
-#[test]
-fn label_label() {
-    let l1 = Label::new();
-    let l2 = Label::from_label(&l1);
-    assert!(l2.value().is_none());
-    // The offset should work both ways.
-    assert_eq!(l2.offset(&l1).unwrap(), 0);
-    assert_eq!(l1.offset(&l2).unwrap(), 0);
-}
-
-#[test]
-fn label_label_offset() {
-    let l1 = Label::new();
-    let l2 = Label::from_label_offset(&l1, 10);
-    assert!(l2.value().is_none());
-    assert_eq!(l2.offset(&l1).unwrap(), 10);
-    assert_eq!(l1.offset(&l2).unwrap(), -10);
-
-    let l3 = Label::from_label_offset(&l2, 10);
-    assert_eq!(l3.offset(&l2).unwrap(), 10);
-    assert_eq!(l2.offset(&l3).unwrap(), -10);
-    assert_eq!(l3.offset(&l1).unwrap(), 20);
-    assert_eq!(l1.offset(&l3).unwrap(), -20);
-
-    let l4 = Label::from_label_offset(&l3, 10);
-    assert_eq!(l4.offset(&l1).unwrap(), 30);
-
-    // Check that chains of label offsets work properly.
-    let l5 = Label::from_label_offset(&l1, 10);
-    // l5 and l2 are both l1 + 10.
-    assert_eq!(l5.offset(&l2).unwrap(), 0);
-    assert_eq!(l5.offset(&l3).unwrap(), -10);
-    assert_eq!(l3.offset(&l5).unwrap(), 10);
-}
-
-#[test]
-fn label_offset_unrelated() {
-    let l1 = Label::new();
-    let l2 = Label::new();
-    assert!(l2.offset(&l1).is_none());
-    assert!(l1.offset(&l2).is_none());
-}
-
-#[test]
-fn label_add() {
-    let l1 = Label::new();
-    let l2 = &l1 + 10;
-    assert_eq!(l2.offset(&l1).unwrap(), 10);
-}
-
-#[test]
-fn label_sub() {
-    let l1 = Label::new();
-    let l2 = &l1 - 10;
-    assert_eq!(l2.offset(&l1).unwrap(), -10);
-}
-
-#[test]
-fn label_sub_label() {
-    let l1 = Label::new();
-    let l2 = &l1 + 10;
-    assert_eq!(&l2 - &l1, 10);
-}
-
-#[test]
-fn label_set_const() {
-    let l = Label::new();
-    let val = 0x12345678;
-    l.set_const(val);
-    assert_eq!(l.value().unwrap(), val);
-}
-
-#[test]
-fn label_set() {
-    let val = 0x12345678;
-    let l1 = Label::from_const(val);
-    let l2 = Label::new();
-    l2.set(&l1);
-    assert_eq!(l2.value().unwrap(), val);
-    // Check that setting the first value's label *after* the call to set works.
-    let l3 = Label::new();
-    let l4 = Label::new();
-    l4.set(&l3);
-    l3.set_const(val);
-    assert_eq!(l4.value().unwrap(), val);
-}
-
-#[test]
-fn section_construction() {
-    let s = Section::new();
-    assert_eq!(s.endian, DEFAULT_ENDIAN);
-
-    let s2 = Section::with_endian(Endian::Little);
-    assert_eq!(s2.endian, Endian::Little);
-}
-
-#[test]
-fn section_append_bytes() {
-    let s = Section::new();
-    let b1 = [0, 1, 2, 3, 4];
-    let b2 = [0xf, 0xe, 0xd, 0xc, 0xb];
-    assert_eq!(
-        s.append_bytes(&b1)
-            .append_bytes(&b2)
-            .get_contents()
-            .unwrap(),
-        &[0, 1, 2, 3, 4, 0xf, 0xe, 0xd, 0xc, 0xb]
-    );
-}
-
-#[test]
-fn section_final_size() {
-    let s = Section::new();
-    let size = s.final_size();
-    s.append_repeated(0, 20).get_contents().unwrap();
-    assert_eq!(size.value().unwrap(), 20);
-}
-
-#[test]
-fn section_append_section_simple() {
-    assert_eq!(
-        Section::new()
-            .D8(0xab)
-            .append_section(Section::new().D8(0xcd))
-            .D8(0xef)
-            .get_contents()
-            .unwrap(),
-        &[0xab, 0xcd, 0xef]
-    );
-}
-
-#[test]
-fn section_append_section_labels() {
-    let mut s = Section::new();
-    let l1 = Label::from_const(0x12);
-    let l2 = Label::new();
-    s = s.D8(0xab);
-    {
-        s = s.append_section(Section::new().D8(0xcd).D8(&l1).D8(&l2));
-    }
-    s = s.D8(0xef);
-    l2.set_const(0x34);
-    assert_eq!(s.get_contents().unwrap(), &[0xab, 0xcd, 0x12, 0x34, 0xef]);
-}
-
-#[test]
-fn section_append_section_final_size() {
-    let s = Section::new().D8(0xcd);
-    assert_eq!(
-        Section::new()
-            .D8(0xab)
-            .D8(s.final_size())
-            .append_section(s)
-            .D8(0xef)
-            .get_contents()
-            .unwrap(),
-        &[0xab, 1, 0xcd, 0xef]
-    );
-}
-
-#[test]
-fn section_append_repeated() {
-    let s = Section::new();
-    assert_eq!(
-        s.append_repeated(0xff, 5).get_contents().unwrap(),
-        &[0xff, 0xff, 0xff, 0xff, 0xff]
-    );
-}
-
-#[test]
-fn section_align() {
-    let s = Section::new();
-    assert_eq!(
-        s.D8(1).align(8).D8(1).get_contents().unwrap(),
-        &[1, 0, 0, 0, 0, 0, 0, 0, 1]
-    );
-}
-
-#[test]
-fn section_test_8() {
-    let s = Section::new();
-    assert_eq!(
-        s.D8(0x12).L8(0x12).B8(0x12).get_contents().unwrap(),
-        &[0x12, 0x12, 0x12]
-    );
-}
-
-#[test]
-fn section_test_16() {
-    let s = Section::with_endian(Endian::Little);
-    assert_eq!(
-        s.D16(0xABCD)
-            .L16(0xABCD)
-            .B16(0xABCD)
-            .get_contents()
-            .unwrap(),
-        &[0xCD, 0xAB, 0xCD, 0xAB, 0xAB, 0xCD]
-    );
-}
-
-#[test]
-fn section_test_32() {
-    let s = Section::with_endian(Endian::Little);
-    assert_eq!(
-        s.D32(0xABCD1234)
-            .L32(0xABCD1234)
-            .B32(0xABCD1234)
-            .get_contents()
-            .unwrap(),
-        &[0x34, 0x12, 0xCD, 0xAB, 0x34, 0x12, 0xCD, 0xAB, 0xAB, 0xCD, 0x12, 0x34]
-    );
-}
-
-#[test]
-fn section_test_64() {
-    let s = Section::with_endian(Endian::Little);
-    assert_eq!(
-        s.D64(0x12345678ABCDEFFF)
-            .L64(0x12345678ABCDEFFF)
-            .B64(0x12345678ABCDEFFF)
-            .get_contents()
-            .unwrap(),
-        &[
-            0xFF, 0xEF, 0xCD, 0xAB, 0x78, 0x56, 0x34, 0x12, 0xFF, 0xEF, 0xCD, 0xAB, 0x78, 0x56,
-            0x34, 0x12, 0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF, 0xFF
-        ]
-    );
-}
-
-#[test]
-fn section_d8l_const_label() {
-    let l = Label::from_const(10);
-    let s = Section::with_endian(Endian::Little);
-    assert_eq!(
-        s.D8(&l).L8(&l).B8(&l).get_contents().unwrap(),
-        &[10, 10, 10]
-    );
-}
-
-#[test]
-fn section_d16l_const_label() {
-    let l = Label::from_const(0xABCD);
-    let s = Section::with_endian(Endian::Little);
-    assert_eq!(
-        s.D16(&l).L16(&l).B16(&l).get_contents().unwrap(),
-        &[0xCD, 0xAB, 0xCD, 0xAB, 0xAB, 0xCD]
-    );
-}
-
-#[test]
-fn section_d32l_const_label() {
-    let l = Label::from_const(0xABCD1234);
-    let s = Section::with_endian(Endian::Little);
-    assert_eq!(
-        s.D32(&l).L32(&l).B32(&l).get_contents().unwrap(),
-        &[0x34, 0x12, 0xCD, 0xAB, 0x34, 0x12, 0xCD, 0xAB, 0xAB, 0xCD, 0x12, 0x34]
-    );
-}
-
-#[test]
-fn section_d64l_const_label() {
-    let l = Label::from_const(0xABCD12345678F00D);
-    let s = Section::with_endian(Endian::Little);
-    assert_eq!(
-        s.D64(&l).L64(&l).B64(&l).get_contents().unwrap(),
-        &[
-            0x0D, 0xF0, 0x78, 0x56, 0x34, 0x12, 0xCD, 0xAB, 0x0D, 0xF0, 0x78, 0x56, 0x34, 0x12,
-            0xCD, 0xAB, 0xAB, 0xCD, 0x12, 0x34, 0x56, 0x78, 0xF0, 0x0D
-        ]
-    );
-}
-
-#[test]
-fn section_get_contents_label_no_value() {
-    // Trying to get_contents on a Section when a Label that was added
-    // has no value should return None.
-    let l = Label::new();
-    let s = Section::with_endian(Endian::Little);
-    assert!(s.D8(&l).get_contents().is_none());
-}
-
-#[test]
-fn section_label_assign_late() {
-    let l = Label::new();
-    let mut s = Section::with_endian(Endian::Little);
-    s = s.D8(&l).L8(&l).B8(&l);
-    // Now assign a value to l.
-    l.set_const(10);
-    assert_eq!(s.get_contents().unwrap(), &[10, 10, 10]);
-}
-
-#[test]
-fn section_start_here() {
-    let mut s = Section::with_endian(Endian::Little);
-    s = s.append_repeated(0, 10);
-    let start = s.start();
-    let mut here = s.here();
-    assert_eq!(here.offset(&start).unwrap(), 10);
-    s = s.append_repeated(0, 10);
-    here = s.here();
-    assert_eq!(here.offset(&start).unwrap(), 20);
-}
-
-#[test]
-fn section_start_mark() {
-    let s = Section::with_endian(Endian::Little);
-    let start = s.start();
-    let marked = Label::new();
-    s.append_repeated(0, 10)
-        .mark(&marked)
-        .append_repeated(0, 10);
-    assert_eq!(marked.offset(&start).unwrap(), 10);
-}
-
-#[test]
-fn section_additional_methods_trait() {
-    trait ExtraSection {
-        fn add_a_thing(self) -> Section;
+        let b_f2 = Rc::new(Binding::from(b_c.clone(), 10));
+        // b_f2 is a non-zero offset from b_c.
+        assert_eq!(b_f2.offset(&b_c).unwrap(), 10);
+        // We need to go deeper.
+        let b_f3 = Rc::new(Binding::from(b_f1, 10));
+        assert_eq!(b_f3.offset(&b_u).unwrap(), 10);
+        let b_f4 = Rc::new(Binding::from(b_f3.clone(), 10));
+        assert_eq!(b_f4.offset(&b_u).unwrap(), 20);
+        // Make another chain of bindings so we can test that the leaves of
+        // both chains compare properly.
+        // <INCEPTION HORN>
+        let b_f5 = Rc::new(Binding::from(b_u.clone(), 10));
+        let b_f6 = Rc::new(Binding::from(b_f5.clone(), 10));
+        assert_eq!(b_f6.offset(&b_f5).unwrap(), 10);
+        assert_eq!(b_f6.offset(&b_u).unwrap(), 20);
+        // Now for the kicker, b_f6 and b_f4 should be the same value, since
+        // they're both b_u + 20.
+        assert_eq!(b_f6.offset(&b_f4).unwrap(), 0);
+        // and some additional checks.
+        assert_eq!(b_f6.offset(&b_f3).unwrap(), 10);
+        assert_eq!(b_f3.offset(&b_f6).unwrap(), -10);
     }
 
-    impl ExtraSection for Section {
-        fn add_a_thing(self) -> Section {
-            self.B8(0x12).B16(0x3456).B32(0x7890abcd)
+    #[test]
+    fn binding_value() {
+        let b_u = Rc::new(Binding::unconstrained());
+        let b_c = Rc::new(Binding::constant(1));
+        let b_f1 = Rc::new(Binding::from(b_u.clone(), 0));
+        assert!(b_u.value().is_none());
+        assert_eq!(b_c.value().unwrap(), 1);
+        assert!(b_f1.value().is_none());
+
+        let b_f2 = Rc::new(Binding::from(b_c, 10));
+        assert_eq!(b_f2.value().unwrap(), 11);
+        // We need to go deeper.
+        let b_f3 = Rc::new(Binding::from(b_f1, 10));
+        assert!(b_f3.value().is_none());
+        let b_f4 = Rc::new(Binding::from(b_f3, 10));
+        assert!(b_f4.value().is_none());
+
+        let b_f5 = Rc::new(Binding::from(b_f2, 10));
+        assert_eq!(b_f5.value().unwrap(), 21);
+    }
+
+    #[test]
+    fn label_unconstrained() {
+        let l = Label::new();
+        assert!(l.value().is_none());
+    }
+
+    #[test]
+    fn label_const() {
+        let l = Label::from_const(10);
+        assert_eq!(l.value().unwrap(), 10);
+    }
+
+    #[test]
+    fn label_label() {
+        let l1 = Label::new();
+        let l2 = Label::from_label(&l1);
+        assert!(l2.value().is_none());
+        // The offset should work both ways.
+        assert_eq!(l2.offset(&l1).unwrap(), 0);
+        assert_eq!(l1.offset(&l2).unwrap(), 0);
+    }
+
+    #[test]
+    fn label_label_offset() {
+        let l1 = Label::new();
+        let l2 = Label::from_label_offset(&l1, 10);
+        assert!(l2.value().is_none());
+        assert_eq!(l2.offset(&l1).unwrap(), 10);
+        assert_eq!(l1.offset(&l2).unwrap(), -10);
+
+        let l3 = Label::from_label_offset(&l2, 10);
+        assert_eq!(l3.offset(&l2).unwrap(), 10);
+        assert_eq!(l2.offset(&l3).unwrap(), -10);
+        assert_eq!(l3.offset(&l1).unwrap(), 20);
+        assert_eq!(l1.offset(&l3).unwrap(), -20);
+
+        let l4 = Label::from_label_offset(&l3, 10);
+        assert_eq!(l4.offset(&l1).unwrap(), 30);
+
+        // Check that chains of label offsets work properly.
+        let l5 = Label::from_label_offset(&l1, 10);
+        // l5 and l2 are both l1 + 10.
+        assert_eq!(l5.offset(&l2).unwrap(), 0);
+        assert_eq!(l5.offset(&l3).unwrap(), -10);
+        assert_eq!(l3.offset(&l5).unwrap(), 10);
+    }
+
+    #[test]
+    fn label_offset_unrelated() {
+        let l1 = Label::new();
+        let l2 = Label::new();
+        assert!(l2.offset(&l1).is_none());
+        assert!(l1.offset(&l2).is_none());
+    }
+
+    #[test]
+    fn label_add() {
+        let l1 = Label::new();
+        let l2 = &l1 + 10;
+        assert_eq!(l2.offset(&l1).unwrap(), 10);
+    }
+
+    #[test]
+    fn label_sub() {
+        let l1 = Label::new();
+        let l2 = &l1 - 10;
+        assert_eq!(l2.offset(&l1).unwrap(), -10);
+    }
+
+    #[test]
+    fn label_sub_label() {
+        let l1 = Label::new();
+        let l2 = &l1 + 10;
+        assert_eq!(&l2 - &l1, 10);
+    }
+
+    #[test]
+    fn label_set_const() {
+        let l = Label::new();
+        let val = 0x12345678;
+        l.set_const(val);
+        assert_eq!(l.value().unwrap(), val);
+    }
+
+    #[test]
+    fn label_set() {
+        let val = 0x12345678;
+        let l1 = Label::from_const(val);
+        let l2 = Label::new();
+        l2.set(&l1);
+        assert_eq!(l2.value().unwrap(), val);
+        // Check that setting the first value's label *after* the call to set works.
+        let l3 = Label::new();
+        let l4 = Label::new();
+        l4.set(&l3);
+        l3.set_const(val);
+        assert_eq!(l4.value().unwrap(), val);
+    }
+
+    #[test]
+    fn section_construction() {
+        let s = Section::new();
+        assert_eq!(s.endian, DEFAULT_ENDIAN);
+
+        let s2 = Section::with_endian(Endian::Little);
+        assert_eq!(s2.endian, Endian::Little);
+    }
+
+    #[test]
+    fn section_append_bytes() {
+        let s = Section::new();
+        let b1 = [0, 1, 2, 3, 4];
+        let b2 = [0xf, 0xe, 0xd, 0xc, 0xb];
+        assert_eq!(
+            s.append_bytes(&b1)
+                .append_bytes(&b2)
+                .get_contents()
+                .unwrap(),
+            &[0, 1, 2, 3, 4, 0xf, 0xe, 0xd, 0xc, 0xb]
+        );
+    }
+
+    #[test]
+    fn section_final_size() {
+        let s = Section::new();
+        let size = s.final_size();
+        s.append_repeated(0, 20).get_contents().unwrap();
+        assert_eq!(size.value().unwrap(), 20);
+    }
+
+    #[test]
+    fn section_append_section_simple() {
+        assert_eq!(
+            Section::new()
+                .D8(0xab)
+                .append_section(Section::new().D8(0xcd))
+                .D8(0xef)
+                .get_contents()
+                .unwrap(),
+            &[0xab, 0xcd, 0xef]
+        );
+    }
+
+    #[test]
+    fn section_append_section_labels() {
+        let mut s = Section::new();
+        let l1 = Label::from_const(0x12);
+        let l2 = Label::new();
+        s = s.D8(0xab);
+        {
+            s = s.append_section(Section::new().D8(0xcd).D8(&l1).D8(&l2));
         }
+        s = s.D8(0xef);
+        l2.set_const(0x34);
+        assert_eq!(s.get_contents().unwrap(), &[0xab, 0xcd, 0x12, 0x34, 0xef]);
     }
 
-    assert_eq!(
+    #[test]
+    fn section_append_section_final_size() {
+        let s = Section::new().D8(0xcd);
+        assert_eq!(
+            Section::new()
+                .D8(0xab)
+                .D8(s.final_size())
+                .append_section(s)
+                .D8(0xef)
+                .get_contents()
+                .unwrap(),
+            &[0xab, 1, 0xcd, 0xef]
+        );
+    }
+
+    #[test]
+    fn section_append_repeated() {
+        let s = Section::new();
+        assert_eq!(
+            s.append_repeated(0xff, 5).get_contents().unwrap(),
+            &[0xff, 0xff, 0xff, 0xff, 0xff]
+        );
+    }
+
+    #[test]
+    fn section_align() {
+        let s = Section::new();
+        assert_eq!(
+            s.D8(1).align(8).D8(1).get_contents().unwrap(),
+            &[1, 0, 0, 0, 0, 0, 0, 0, 1]
+        );
+    }
+
+    #[test]
+    fn section_test_8() {
+        let s = Section::new();
+        assert_eq!(
+            s.D8(0x12).L8(0x12).B8(0x12).get_contents().unwrap(),
+            &[0x12, 0x12, 0x12]
+        );
+    }
+
+    #[test]
+    fn section_test_16() {
+        let s = Section::with_endian(Endian::Little);
+        assert_eq!(
+            s.D16(0xABCD)
+                .L16(0xABCD)
+                .B16(0xABCD)
+                .get_contents()
+                .unwrap(),
+            &[0xCD, 0xAB, 0xCD, 0xAB, 0xAB, 0xCD]
+        );
+    }
+
+    #[test]
+    fn section_test_32() {
+        let s = Section::with_endian(Endian::Little);
+        assert_eq!(
+            s.D32(0xABCD1234)
+                .L32(0xABCD1234)
+                .B32(0xABCD1234)
+                .get_contents()
+                .unwrap(),
+            &[0x34, 0x12, 0xCD, 0xAB, 0x34, 0x12, 0xCD, 0xAB, 0xAB, 0xCD, 0x12, 0x34]
+        );
+    }
+
+    #[test]
+    fn section_test_64() {
+        let s = Section::with_endian(Endian::Little);
+        assert_eq!(
+            s.D64(0x12345678ABCDEFFF)
+                .L64(0x12345678ABCDEFFF)
+                .B64(0x12345678ABCDEFFF)
+                .get_contents()
+                .unwrap(),
+            &[
+                0xFF, 0xEF, 0xCD, 0xAB, 0x78, 0x56, 0x34, 0x12, 0xFF, 0xEF, 0xCD, 0xAB, 0x78, 0x56,
+                0x34, 0x12, 0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF, 0xFF
+            ]
+        );
+    }
+
+    #[test]
+    fn section_d8l_const_label() {
+        let l = Label::from_const(10);
+        let s = Section::with_endian(Endian::Little);
+        assert_eq!(
+            s.D8(&l).L8(&l).B8(&l).get_contents().unwrap(),
+            &[10, 10, 10]
+        );
+    }
+
+    #[test]
+    fn section_d16l_const_label() {
+        let l = Label::from_const(0xABCD);
+        let s = Section::with_endian(Endian::Little);
+        assert_eq!(
+            s.D16(&l).L16(&l).B16(&l).get_contents().unwrap(),
+            &[0xCD, 0xAB, 0xCD, 0xAB, 0xAB, 0xCD]
+        );
+    }
+
+    #[test]
+    fn section_d32l_const_label() {
+        let l = Label::from_const(0xABCD1234);
+        let s = Section::with_endian(Endian::Little);
+        assert_eq!(
+            s.D32(&l).L32(&l).B32(&l).get_contents().unwrap(),
+            &[0x34, 0x12, 0xCD, 0xAB, 0x34, 0x12, 0xCD, 0xAB, 0xAB, 0xCD, 0x12, 0x34]
+        );
+    }
+
+    #[test]
+    fn section_d64l_const_label() {
+        let l = Label::from_const(0xABCD12345678F00D);
+        let s = Section::with_endian(Endian::Little);
+        assert_eq!(
+            s.D64(&l).L64(&l).B64(&l).get_contents().unwrap(),
+            &[
+                0x0D, 0xF0, 0x78, 0x56, 0x34, 0x12, 0xCD, 0xAB, 0x0D, 0xF0, 0x78, 0x56, 0x34, 0x12,
+                0xCD, 0xAB, 0xAB, 0xCD, 0x12, 0x34, 0x56, 0x78, 0xF0, 0x0D
+            ]
+        );
+    }
+
+    #[test]
+    fn section_get_contents_label_no_value() {
+        // Trying to get_contents on a Section when a Label that was added
+        // has no value should return None.
+        let l = Label::new();
+        let s = Section::with_endian(Endian::Little);
+        assert!(s.D8(&l).get_contents().is_none());
+    }
+
+    #[test]
+    fn section_label_assign_late() {
+        let l = Label::new();
+        let mut s = Section::with_endian(Endian::Little);
+        s = s.D8(&l).L8(&l).B8(&l);
+        // Now assign a value to l.
+        l.set_const(10);
+        assert_eq!(s.get_contents().unwrap(), &[10, 10, 10]);
+    }
+
+    #[test]
+    fn section_start_here() {
+        let mut s = Section::with_endian(Endian::Little);
+        s = s.append_repeated(0, 10);
+        let start = s.start();
+        let mut here = s.here();
+        assert_eq!(here.offset(&start).unwrap(), 10);
+        s = s.append_repeated(0, 10);
+        here = s.here();
+        assert_eq!(here.offset(&start).unwrap(), 20);
+    }
+
+    #[test]
+    fn section_start_mark() {
+        let s = Section::with_endian(Endian::Little);
+        let start = s.start();
+        let marked = Label::new();
+        s.append_repeated(0, 10)
+            .mark(&marked)
+            .append_repeated(0, 10);
+        assert_eq!(marked.offset(&start).unwrap(), 10);
+    }
+
+    #[test]
+    fn section_additional_methods_trait() {
+        trait ExtraSection {
+            fn add_a_thing(self) -> Section;
+        }
+
+        impl ExtraSection for Section {
+            fn add_a_thing(self) -> Section {
+                self.B8(0x12).B16(0x3456).B32(0x7890abcd)
+            }
+        }
+
+        assert_eq!(
+            Section::new()
+                .D8(0)
+                .add_a_thing()
+                .D8(1)
+                .get_contents()
+                .unwrap(),
+            &[0, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 1]
+        );
+    }
+
+    #[test]
+    fn test_simple_labels() {
+        let start = Label::new();
+        let end = Label::new();
+
+        let _section = Section::new().mark(&start).mark(&end);
+
+        assert_eq!(start.offset(&end), Some(0));
+    }
+
+    #[test]
+    fn test_set_start_const() {
+        let l = Label::new();
         Section::new()
-            .D8(0)
-            .add_a_thing()
-            .D8(1)
+            .set_start_const(0)
+            .append_repeated(0, 10)
+            .mark(&l)
             .get_contents()
-            .unwrap(),
-        &[0, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 1]
-    );
-}
+            .unwrap();
+        assert_eq!(l.value().unwrap(), 10);
+    }
 
-#[test]
-fn test_simple_labels() {
-    let start = Label::new();
-    let end = Label::new();
-
-    let _section = Section::new().mark(&start).mark(&end);
-
-    assert_eq!(start.offset(&end), Some(0));
-}
-
-#[test]
-fn test_set_start_const() {
-    let l = Label::new();
-    Section::new()
-        .set_start_const(0)
-        .append_repeated(0, 10)
-        .mark(&l)
-        .get_contents()
-        .unwrap();
-    assert_eq!(l.value().unwrap(), 10);
-}
-
-#[test]
-fn section_bigendian_defaults() {
-    let s = Section::with_endian(Endian::Big);
-    assert_eq!(
-        s.D8(0x12)
-            .D16(0x1234)
-            .D32(0x12345678)
-            .D64(0x12345678ABCDEFFF)
-            .get_contents()
-            .unwrap(),
-        &[
-            0x12, 0x12, 0x34, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF,
-            0xFF
-        ]
-    );
+    #[test]
+    fn section_bigendian_defaults() {
+        let s = Section::with_endian(Endian::Big);
+        assert_eq!(
+            s.D8(0x12)
+                .D16(0x1234)
+                .D32(0x12345678)
+                .D64(0x12345678ABCDEFFF)
+                .get_contents()
+                .unwrap(),
+            &[
+                0x12, 0x12, 0x34, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF,
+                0xFF
+            ]
+        );
+    }
 }
