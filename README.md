@@ -16,10 +16,10 @@ You use this crate primarily by creating a `Section`, which provides APIs to bui
   let l1 = Label::new();
   let l2 = Label::new();
   // `Section`s have an associated default endianness.
-  let s = Section::with_endian(Endian::Little);
+  let mut s = Section::with_endian(Endian::Little);
   // `start` is a `Label` whose value is the beginning of the `Section`'s data.
   let start = s.start();
-  let s = s.append_bytes(&[0x01, 0x02, 0x03])
+  s.append_bytes(&[0x01, 0x02, 0x03])
     // Append a 32-bit word with the section's default endianness
     // Methods on `Section` chain to make writing repeated entries simple!
     .D32(0xabcd0102)

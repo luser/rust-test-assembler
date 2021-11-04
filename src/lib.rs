@@ -40,8 +40,8 @@
 //! use test_assembler::Section;
 //!
 //! let mut section = Section::new();
-//! assert_eq!(section.D8(0xFF).L16(0xABCD).B32(0x12345678)
-//!             .get_contents().unwrap(),
+//! section.D8(0xFF).L16(0xABCD).B32(0x12345678);
+//! assert_eq!(section.get_contents().unwrap(),
 //!            &[0xFF, 0xCD, 0xAB, 0x12, 0x34, 0x56, 0x78]);
 //! ```
 //!
@@ -53,7 +53,7 @@
 //!
 //! let l = Label::new();
 //! let mut s = Section::with_endian(Endian::Little);
-//! s = s.D32(&l);
+//! s.D32(&l);
 //! // Now assign a value to l.
 //! l.set_const(0x12345678);
 //! assert_eq!(s.get_contents().unwrap(),
@@ -69,7 +69,7 @@
 //! use test_assembler::*;
 //!
 //! let l = Label::new();
-//! let s = Section::with_endian(Endian::Little);
+//! let mut s = Section::with_endian(Endian::Little);
 //! let start = s.start();
 //! s.append_repeated(0, 10)
 //!     .mark(&l)
@@ -487,13 +487,15 @@ pub struct Section {
 
 impl Section {
     /// Construct a `Section` with platform-default endianness.
-    pub fn new() -> Section {
-        Section::with_endian(DEFAULT_ENDIAN)
+    #[inline]
+    pub fn new() -> Self {
+        Self::with_endian(DEFAULT_ENDIAN)
     }
 
     /// Construct a `Section` with `endian` endianness.
-    pub fn with_endian(endian: Endian) -> Section {
-        Section {
+    #[inline]
+    pub fn with_endian(endian: Endian) -> Self {
+        Self {
             endian,
             contents: Cursor::new(vec![]),
             references: vec![],
@@ -502,7 +504,17 @@ impl Section {
         }
     }
 
+    /// Constructs a `Section` via a user supplied for simpler one-liners
+    pub fn inline(endian: Option<Endian>, func: impl FnOnce(&mut Self) -> &mut Self) -> Self {
+        let mut this = Self::with_endian(endian.unwrap_or(DEFAULT_ENDIAN));
+
+        func(&mut this);
+
+        this
+    }
+
     /// Return the current size of the section.
+    #[inline]
     pub fn size(&self) -> u64 {
         self.contents.get_ref().len() as u64
     }
@@ -510,6 +522,7 @@ impl Section {
     /// Return a `Label` that will resolve to the final size of the section.
     ///
     /// This label is undefined until `get_contents` is called.
+    #[inline]
     pub fn final_size(&self) -> Label {
         self.final_size.clone()
     }
@@ -522,21 +535,13 @@ impl Section {
         // Patch all labels into the section's contents.
         let mut section = self;
         section.final_size.set_const(section.size());
-        let references: Vec<Reference> = section.references.to_vec();
-        let mut ok = true;
-        section = references.iter().cloned().fold(section, |s, r| {
-            if let Some(val) = r.label.value() {
-                s.store_label_value(val, r.offset, r.endian, r.size)
-            } else {
-                ok = false;
-                s
-            }
-        });
-        if ok {
-            Some(section.contents.into_inner())
-        } else {
-            None
+
+        for rf in section.references.clone() {
+            let val = rf.label.value()?;
+            section.store_label_value(val, rf.offset, rf.endian, rf.size);
         }
+
+        Some(section.contents.into_inner())
     }
 
     /// Return a label representing the start of the section.
@@ -547,29 +552,34 @@ impl Section {
     /// this simple-minded interface won't be enough. This class only
     /// provides a single start label, for use with the `here` and `mark`
     /// methods.
+    #[inline]
     pub fn start(&self) -> Label {
         self.start.clone()
     }
 
     /// A label representing the point at which the next appended item will appear in the section, relative to `start`.
+    #[inline]
     pub fn here(&self) -> Label {
         &self.start + self.size() as i64
     }
 
     /// Set the value of `start` to `value`.
-    pub fn set_start_const(self, value: u64) -> Section {
+    #[inline]
+    pub fn set_start_const(&mut self, value: u64) -> &mut Self {
         self.start.set_const(value);
         self
     }
 
     /// Set `label` to [`here`](#method.here), and return this section.
-    pub fn mark(self, label: &Label) -> Section {
+    #[inline]
+    pub fn mark(&mut self, label: &Label) -> &mut Self {
         label.set(&self.here());
         self
     }
 
     /// Append `data` to the end of this section, and return this section.
-    pub fn append_bytes(mut self, data: &[u8]) -> Section {
+    #[inline]
+    pub fn append_bytes(&mut self, data: &[u8]) -> &mut Self {
         self.contents.write_all(data).unwrap();
         self
     }
@@ -579,7 +589,7 @@ impl Section {
     /// Any `Label`s that were appended to `section` will not be
     /// resolved until this section is finalized.
     /// Return this section.
-    pub fn append_section<S: Into<Section>>(mut self, section: S) -> Section {
+    pub fn append_section(&mut self, section: impl Into<Self>) -> &mut Self {
         let Section {
             contents,
             references,
@@ -599,7 +609,8 @@ impl Section {
     /// Append `count` copies of `byte` to the end of this section.
     ///
     /// Return this section.
-    pub fn append_repeated(mut self, byte: u8, count: usize) -> Section {
+    #[inline]
+    pub fn append_repeated(&mut self, byte: u8, count: usize) -> &mut Self {
         for _ in 0..count {
             self.contents.write_u8(byte).unwrap();
         }
@@ -610,7 +621,8 @@ impl Section {
     ///
     /// Fill the gap with zeroes. `alignment` must be a power of two.
     /// Return this section.
-    pub fn align(self, alignment: u64) -> Section {
+    #[inline]
+    pub fn align(&mut self, alignment: u64) -> &mut Self {
         // `alignment` must be a power of two.
         assert!(((alignment - 1) & alignment) == 0);
         let new_size = (self.size() + alignment - 1) & !(alignment - 1);
@@ -618,7 +630,13 @@ impl Section {
         self.append_repeated(0, add as usize)
     }
 
-    fn store_label_value(mut self, val: u64, offset: u64, endian: Endian, size: usize) -> Section {
+    fn store_label_value(
+        &mut self,
+        val: u64,
+        offset: u64,
+        endian: Endian,
+        size: usize,
+    ) -> &mut Self {
         let current = self.size();
         if offset != current {
             self.contents.seek(SeekFrom::Start(offset)).unwrap();
@@ -644,7 +662,7 @@ impl Section {
     /// Append `label` to the Section with `endian` endianness, taking `size` bytes.
     ///
     /// Panics if `size` is not an intrinsic integer size: 1, 2, 4, 8 bytes.
-    fn append_label(mut self, label: &Label, endian: Endian, size: usize) -> Section {
+    fn append_label(&mut self, label: &Label, endian: Endian, size: usize) -> &mut Self {
         let current = self.size();
         // For labels with a known value, don't bother with a reference.
         if let Some(val) = label.value() {
@@ -666,7 +684,7 @@ impl Section {
     ///
     /// `byte` may be a `Label` or a `u8`.
     /// Return this section.
-    pub fn D8<'a, T: ToLabelOrNum<'a, u8>>(mut self, byte: T) -> Section {
+    pub fn D8<'a, T: ToLabelOrNum<'a, u8>>(&mut self, byte: T) -> &mut Self {
         let endian = self.endian;
         match byte.to_labelornum() {
             LabelOrNum::Num(n) => {
@@ -679,13 +697,13 @@ impl Section {
     /// Append `byte` as little-endian (identical to `D8`).
     ///
     /// Return this section.
-    pub fn L8<'a, T: ToLabelOrNum<'a, u8>>(self, byte: T) -> Section {
+    pub fn L8<'a, T: ToLabelOrNum<'a, u8>>(&mut self, byte: T) -> &mut Self {
         self.D8(byte)
     }
     /// Append `byte` as big-endian (identical to `D8`).
     ///
     /// Return this section.
-    pub fn B8<'a, T: ToLabelOrNum<'a, u8>>(self, byte: T) -> Section {
+    pub fn B8<'a, T: ToLabelOrNum<'a, u8>>(&mut self, byte: T) -> &mut Self {
         self.D8(byte)
     }
 
@@ -693,7 +711,7 @@ impl Section {
     ///
     /// `word` may be a `Label` or a `u16`.
     /// Return this section.
-    pub fn D16<'a, T: ToLabelOrNum<'a, u16>>(self, word: T) -> Section {
+    pub fn D16<'a, T: ToLabelOrNum<'a, u16>>(&mut self, word: T) -> &mut Self {
         match self.endian {
             Endian::Little => self.L16(word),
             Endian::Big => self.B16(word),
@@ -703,7 +721,7 @@ impl Section {
     ///
     /// `word` may be a `Label` or a `u16`.
     /// Return this section.
-    pub fn L16<'a, T: ToLabelOrNum<'a, u16>>(mut self, word: T) -> Section {
+    pub fn L16<'a, T: ToLabelOrNum<'a, u16>>(&mut self, word: T) -> &mut Self {
         match word.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u16::<LittleEndian>(n).unwrap();
@@ -716,7 +734,7 @@ impl Section {
     ///
     /// `word` may be a `Label` or a `u16`.
     /// Return this section.
-    pub fn B16<'a, T: ToLabelOrNum<'a, u16>>(mut self, word: T) -> Section {
+    pub fn B16<'a, T: ToLabelOrNum<'a, u16>>(&mut self, word: T) -> &mut Self {
         match word.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u16::<BigEndian>(n).unwrap();
@@ -730,7 +748,7 @@ impl Section {
     ///
     /// `dword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn D32<'a, T: ToLabelOrNum<'a, u32>>(self, dword: T) -> Section {
+    pub fn D32<'a, T: ToLabelOrNum<'a, u32>>(&mut self, dword: T) -> &mut Self {
         match self.endian {
             Endian::Little => self.L32(dword),
             Endian::Big => self.B32(dword),
@@ -740,7 +758,7 @@ impl Section {
     ///
     /// `dword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn L32<'a, T: ToLabelOrNum<'a, u32>>(mut self, dword: T) -> Section {
+    pub fn L32<'a, T: ToLabelOrNum<'a, u32>>(&mut self, dword: T) -> &mut Self {
         match dword.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u32::<LittleEndian>(n).unwrap();
@@ -753,7 +771,7 @@ impl Section {
     ///
     /// `dword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn B32<'a, T: ToLabelOrNum<'a, u32>>(mut self, dword: T) -> Section {
+    pub fn B32<'a, T: ToLabelOrNum<'a, u32>>(&mut self, dword: T) -> &mut Self {
         match dword.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u32::<BigEndian>(n).unwrap();
@@ -767,7 +785,7 @@ impl Section {
     ///
     /// `qword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn D64<'a, T: ToLabelOrNum<'a, u64>>(self, qword: T) -> Section {
+    pub fn D64<'a, T: ToLabelOrNum<'a, u64>>(&mut self, qword: T) -> &mut Self {
         match self.endian {
             Endian::Little => self.L64(qword),
             Endian::Big => self.B64(qword),
@@ -777,7 +795,7 @@ impl Section {
     ///
     /// `qword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn L64<'a, T: ToLabelOrNum<'a, u64>>(mut self, qword: T) -> Section {
+    pub fn L64<'a, T: ToLabelOrNum<'a, u64>>(&mut self, qword: T) -> &mut Self {
         match qword.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u64::<LittleEndian>(n).unwrap();
@@ -790,7 +808,7 @@ impl Section {
     ///
     /// `qword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn B64<'a, T: ToLabelOrNum<'a, u64>>(mut self, qword: T) -> Section {
+    pub fn B64<'a, T: ToLabelOrNum<'a, u64>>(&mut self, qword: T) -> &mut Self {
         match qword.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u64::<BigEndian>(n).unwrap();
@@ -978,12 +996,10 @@ mod test {
 
     #[test]
     fn section_append_bytes() {
-        let s = Section::new();
         let b1 = [0, 1, 2, 3, 4];
         let b2 = [0xf, 0xe, 0xd, 0xc, 0xb];
         assert_eq!(
-            s.append_bytes(&b1)
-                .append_bytes(&b2)
+            Section::inline(None, |s| s.append_bytes(&b1).append_bytes(&b2))
                 .get_contents()
                 .unwrap(),
             &[0, 1, 2, 3, 4, 0xf, 0xe, 0xd, 0xc, 0xb]
@@ -992,21 +1008,22 @@ mod test {
 
     #[test]
     fn section_final_size() {
-        let s = Section::new();
+        let mut s = Section::new();
         let size = s.final_size();
-        s.append_repeated(0, 20).get_contents().unwrap();
+        s.append_repeated(0, 20);
+        s.get_contents().unwrap();
         assert_eq!(size.value().unwrap(), 20);
     }
 
     #[test]
     fn section_append_section_simple() {
         assert_eq!(
-            Section::new()
+            Section::inline(None, |s| s
                 .D8(0xab)
-                .append_section(Section::new().D8(0xcd))
-                .D8(0xef)
-                .get_contents()
-                .unwrap(),
+                .append_section(Section::inline(None, |s| s.D8(0xcd)))
+                .D8(0xef))
+            .get_contents()
+            .unwrap(),
             &[0xab, 0xcd, 0xef]
         );
     }
@@ -1016,92 +1033,94 @@ mod test {
         let mut s = Section::new();
         let l1 = Label::from_const(0x12);
         let l2 = Label::new();
-        s = s.D8(0xab);
+        s.D8(0xab);
         {
-            s = s.append_section(Section::new().D8(0xcd).D8(&l1).D8(&l2));
+            s.append_section(Section::inline(None, |s| s.D8(0xcd).D8(&l1).D8(&l2)));
         }
-        s = s.D8(0xef);
+        s.D8(0xef);
         l2.set_const(0x34);
         assert_eq!(s.get_contents().unwrap(), &[0xab, 0xcd, 0x12, 0x34, 0xef]);
     }
 
     #[test]
     fn section_append_section_final_size() {
-        let s = Section::new().D8(0xcd);
+        let sub = Section::inline(None, |s| s.D8(0xcd));
         assert_eq!(
-            Section::new()
-                .D8(0xab)
-                .D8(s.final_size())
-                .append_section(s)
-                .D8(0xef)
-                .get_contents()
-                .unwrap(),
-            &[0xab, 1, 0xcd, 0xef]
+            Section::inline(None, |s| {
+                let final_size = s.final_size();
+                s.D8(0xab).D8(&final_size).append_section(sub).D8(0xef)
+            })
+            .get_contents()
+            .unwrap(),
+            &[0xab, 4, 0xcd, 0xef]
         );
     }
 
     #[test]
     fn section_append_repeated() {
-        let s = Section::new();
         assert_eq!(
-            s.append_repeated(0xff, 5).get_contents().unwrap(),
+            Section::inline(None, |s| s.append_repeated(0xff, 5))
+                .get_contents()
+                .unwrap(),
             &[0xff, 0xff, 0xff, 0xff, 0xff]
         );
     }
 
     #[test]
     fn section_align() {
-        let s = Section::new();
         assert_eq!(
-            s.D8(1).align(8).D8(1).get_contents().unwrap(),
+            Section::inline(None, |s| s.D8(1).align(8).D8(1))
+                .get_contents()
+                .unwrap(),
             &[1, 0, 0, 0, 0, 0, 0, 0, 1]
         );
     }
 
     #[test]
     fn section_test_8() {
-        let s = Section::new();
         assert_eq!(
-            s.D8(0x12).L8(0x12).B8(0x12).get_contents().unwrap(),
+            Section::inline(None, |s| s.D8(0x12).L8(0x12).B8(0x12))
+                .get_contents()
+                .unwrap(),
             &[0x12, 0x12, 0x12]
         );
     }
 
     #[test]
     fn section_test_16() {
-        let s = Section::with_endian(Endian::Little);
         assert_eq!(
-            s.D16(0xABCD)
+            Section::inline(Some(Endian::Little), |s| s
+                .D16(0xABCD)
                 .L16(0xABCD)
-                .B16(0xABCD)
-                .get_contents()
-                .unwrap(),
+                .B16(0xABCD))
+            .get_contents()
+            .unwrap(),
             &[0xCD, 0xAB, 0xCD, 0xAB, 0xAB, 0xCD]
         );
     }
 
     #[test]
     fn section_test_32() {
-        let s = Section::with_endian(Endian::Little);
         assert_eq!(
-            s.D32(0xABCD1234)
+            Section::inline(Some(Endian::Little), |s| s
+                .D32(0xABCD1234)
                 .L32(0xABCD1234)
-                .B32(0xABCD1234)
-                .get_contents()
-                .unwrap(),
+                .B32(0xABCD1234))
+            .get_contents()
+            .unwrap(),
             &[0x34, 0x12, 0xCD, 0xAB, 0x34, 0x12, 0xCD, 0xAB, 0xAB, 0xCD, 0x12, 0x34]
         );
     }
 
     #[test]
     fn section_test_64() {
-        let s = Section::with_endian(Endian::Little);
         assert_eq!(
-            s.D64(0x12345678ABCDEFFF)
+            Section::inline(Some(Endian::Little), |s| s
+                .D64(0x12345678ABCDEFFF)
                 .L64(0x12345678ABCDEFFF)
-                .B64(0x12345678ABCDEFFF)
-                .get_contents()
-                .unwrap(),
+                .B64(0x12345678ABCDEFFF))
+            .get_contents()
+            .unwrap(),
             &[
                 0xFF, 0xEF, 0xCD, 0xAB, 0x78, 0x56, 0x34, 0x12, 0xFF, 0xEF, 0xCD, 0xAB, 0x78, 0x56,
                 0x34, 0x12, 0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF, 0xFF
@@ -1112,9 +1131,10 @@ mod test {
     #[test]
     fn section_d8l_const_label() {
         let l = Label::from_const(10);
-        let s = Section::with_endian(Endian::Little);
         assert_eq!(
-            s.D8(&l).L8(&l).B8(&l).get_contents().unwrap(),
+            Section::inline(Some(Endian::Little), |s| s.D8(&l).L8(&l).B8(&l))
+                .get_contents()
+                .unwrap(),
             &[10, 10, 10]
         );
     }
@@ -1122,9 +1142,10 @@ mod test {
     #[test]
     fn section_d16l_const_label() {
         let l = Label::from_const(0xABCD);
-        let s = Section::with_endian(Endian::Little);
         assert_eq!(
-            s.D16(&l).L16(&l).B16(&l).get_contents().unwrap(),
+            Section::inline(Some(Endian::Little), |s| s.D16(&l).L16(&l).B16(&l))
+                .get_contents()
+                .unwrap(),
             &[0xCD, 0xAB, 0xCD, 0xAB, 0xAB, 0xCD]
         );
     }
@@ -1132,9 +1153,10 @@ mod test {
     #[test]
     fn section_d32l_const_label() {
         let l = Label::from_const(0xABCD1234);
-        let s = Section::with_endian(Endian::Little);
         assert_eq!(
-            s.D32(&l).L32(&l).B32(&l).get_contents().unwrap(),
+            Section::inline(Some(Endian::Little), |s| s.D32(&l).L32(&l).B32(&l))
+                .get_contents()
+                .unwrap(),
             &[0x34, 0x12, 0xCD, 0xAB, 0x34, 0x12, 0xCD, 0xAB, 0xAB, 0xCD, 0x12, 0x34]
         );
     }
@@ -1142,9 +1164,10 @@ mod test {
     #[test]
     fn section_d64l_const_label() {
         let l = Label::from_const(0xABCD12345678F00D);
-        let s = Section::with_endian(Endian::Little);
         assert_eq!(
-            s.D64(&l).L64(&l).B64(&l).get_contents().unwrap(),
+            Section::inline(Some(Endian::Little), |s| s.D64(&l).L64(&l).B64(&l))
+                .get_contents()
+                .unwrap(),
             &[
                 0x0D, 0xF0, 0x78, 0x56, 0x34, 0x12, 0xCD, 0xAB, 0x0D, 0xF0, 0x78, 0x56, 0x34, 0x12,
                 0xCD, 0xAB, 0xAB, 0xCD, 0x12, 0x34, 0x56, 0x78, 0xF0, 0x0D
@@ -1157,15 +1180,15 @@ mod test {
         // Trying to get_contents on a Section when a Label that was added
         // has no value should return None.
         let l = Label::new();
-        let s = Section::with_endian(Endian::Little);
-        assert!(s.D8(&l).get_contents().is_none());
+        assert!(Section::inline(Some(Endian::Little), |s| s.D8(&l))
+            .get_contents()
+            .is_none());
     }
 
     #[test]
     fn section_label_assign_late() {
         let l = Label::new();
-        let mut s = Section::with_endian(Endian::Little);
-        s = s.D8(&l).L8(&l).B8(&l);
+        let s = Section::inline(Some(Endian::Little), |s| s.D8(&l).L8(&l).B8(&l));
         // Now assign a value to l.
         l.set_const(10);
         assert_eq!(s.get_contents().unwrap(), &[10, 10, 10]);
@@ -1174,18 +1197,18 @@ mod test {
     #[test]
     fn section_start_here() {
         let mut s = Section::with_endian(Endian::Little);
-        s = s.append_repeated(0, 10);
+        s.append_repeated(0, 10);
         let start = s.start();
         let mut here = s.here();
         assert_eq!(here.offset(&start).unwrap(), 10);
-        s = s.append_repeated(0, 10);
+        s.append_repeated(0, 10);
         here = s.here();
         assert_eq!(here.offset(&start).unwrap(), 20);
     }
 
     #[test]
     fn section_start_mark() {
-        let s = Section::with_endian(Endian::Little);
+        let mut s = Section::with_endian(Endian::Little);
         let start = s.start();
         let marked = Label::new();
         s.append_repeated(0, 10)
@@ -1197,20 +1220,17 @@ mod test {
     #[test]
     fn section_additional_methods_trait() {
         trait ExtraSection {
-            fn add_a_thing(self) -> Section;
+            fn add_a_thing(&mut self) -> &mut Self;
         }
 
         impl ExtraSection for Section {
-            fn add_a_thing(self) -> Section {
+            fn add_a_thing(&mut self) -> &mut Self {
                 self.B8(0x12).B16(0x3456).B32(0x7890abcd)
             }
         }
 
         assert_eq!(
-            Section::new()
-                .D8(0)
-                .add_a_thing()
-                .D8(1)
+            Section::inline(None, |s| s.D8(0).add_a_thing().D8(1))
                 .get_contents()
                 .unwrap(),
             &[0, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 1]
@@ -1222,7 +1242,7 @@ mod test {
         let start = Label::new();
         let end = Label::new();
 
-        let _section = Section::new().mark(&start).mark(&end);
+        Section::inline(None, |s| s.mark(&start).mark(&end));
 
         assert_eq!(start.offset(&end), Some(0));
     }
@@ -1230,25 +1250,24 @@ mod test {
     #[test]
     fn test_set_start_const() {
         let l = Label::new();
-        Section::new()
-            .set_start_const(0)
-            .append_repeated(0, 10)
-            .mark(&l)
-            .get_contents()
-            .unwrap();
+        Section::inline(None, |s| {
+            s.set_start_const(0).append_repeated(0, 10).mark(&l)
+        })
+        .get_contents()
+        .unwrap();
         assert_eq!(l.value().unwrap(), 10);
     }
 
     #[test]
     fn section_bigendian_defaults() {
-        let s = Section::with_endian(Endian::Big);
         assert_eq!(
-            s.D8(0x12)
+            Section::inline(Some(Endian::Big), |s| s
+                .D8(0x12)
                 .D16(0x1234)
                 .D32(0x12345678)
-                .D64(0x12345678ABCDEFFF)
-                .get_contents()
-                .unwrap(),
+                .D64(0x12345678ABCDEFFF))
+            .get_contents()
+            .unwrap(),
             &[
                 0x12, 0x12, 0x34, 0x12, 0x34, 0x56, 0x78, 0x12, 0x34, 0x56, 0x78, 0xAB, 0xCD, 0xEF,
                 0xFF
