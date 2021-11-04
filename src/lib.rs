@@ -78,24 +78,19 @@
 //! ```
 
 #![allow(non_snake_case)]
-
-extern crate byteorder;
-
-#[cfg(doctest)]
-extern crate doc_comment;
+#![warn(rust_2018_idioms)]
 
 #[cfg(doctest)]
 doc_comment::doctest!("../README.md");
 
-use std::borrow::Borrow;
-use std::cell::RefCell;
-use std::fmt;
-use std::io::Cursor;
-use std::io::Seek;
-use std::io::SeekFrom;
-use std::io::Write;
-use std::ops::{Add, Deref, Sub};
-use std::rc::Rc;
+use std::{
+    borrow::Borrow,
+    cell::RefCell,
+    fmt,
+    io::{Cursor, Seek, SeekFrom, Write},
+    ops::{Add, Deref, Sub},
+    rc::Rc,
+};
 
 use byteorder::{BigEndian, LittleEndian, WriteBytesExt};
 
@@ -125,7 +120,7 @@ enum BindingValue {
 }
 
 impl fmt::Debug for BindingValue {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             BindingValue::Constant(v) => write!(f, "Constant({})", v),
             BindingValue::From(ref b, v) => write!(f, "From({:?}, {})", b, v),
@@ -140,7 +135,7 @@ struct Binding {
 }
 
 impl fmt::Debug for Binding {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Binding {{ {:?} }}", self.value.borrow())
     }
 }
@@ -233,7 +228,7 @@ pub struct RealLabel {
 }
 
 impl fmt::Debug for RealLabel {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self.binding)
     }
 }
@@ -336,7 +331,7 @@ impl LabelMaker for RealLabel {
 pub struct Label(pub Rc<RealLabel>);
 
 impl fmt::Debug for Label {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Label {{ {:?} }}", self.0)
     }
 }
