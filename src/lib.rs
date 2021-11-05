@@ -339,26 +339,26 @@ impl fmt::Debug for Label {
 impl Deref for Label {
     type Target = RealLabel;
 
-    fn deref(&self) -> &RealLabel {
+    fn deref(&self) -> &Self::Target {
         let &Label(ref inner) = self;
         inner.deref()
     }
 }
 
 impl LabelMaker for Label {
-    fn new() -> Label {
-        Label(Rc::new(RealLabel::new()))
+    fn new() -> Self {
+        Self(Rc::new(RealLabel::new()))
     }
-    fn from_const(val: u64) -> Label {
-        Label(Rc::new(RealLabel::from_const(val)))
+    fn from_const(val: u64) -> Self {
+        Self(Rc::new(RealLabel::from_const(val)))
     }
-    fn from_label(other: &Label) -> Label {
-        let &Label(ref inner) = other;
+    fn from_label(other: &Self) -> Self {
+        let &Self(ref inner) = other;
         Label(Rc::new(RealLabel::from_label(inner.borrow())))
     }
-    fn from_label_offset(other: &Label, offset: i64) -> Label {
-        let &Label(ref inner) = other;
-        Label(Rc::new(RealLabel::from_label_offset(
+    fn from_label_offset(other: &Self, offset: i64) -> Self {
+        let &Self(ref inner) = other;
+        Self(Rc::new(RealLabel::from_label_offset(
             inner.borrow(),
             offset,
         )))
@@ -393,7 +393,7 @@ impl<'a> Sub<i64> for &'a Label {
 impl<'a> Sub<&'a Label> for &'a Label {
     type Output = i64;
 
-    fn sub(self, rhs: &'a Label) -> i64 {
+    fn sub(self, rhs: Self) -> i64 {
         self.offset(rhs).unwrap()
     }
 }
@@ -504,7 +504,7 @@ impl Section {
         }
     }
 
-    /// Constructs a `Section` via a user supplied for simpler one-liners
+    /// Constructs a `Section` via a user-supplied closure for simpler one-liners
     pub fn inline(endian: Option<Endian>, func: impl FnOnce(&mut Self) -> &mut Self) -> Self {
         let mut this = Self::with_endian(endian.unwrap_or(DEFAULT_ENDIAN));
 
@@ -684,7 +684,7 @@ impl Section {
     ///
     /// `byte` may be a `Label` or a `u8`.
     /// Return this section.
-    pub fn D8<'a, T: ToLabelOrNum<'a, u8>>(&mut self, byte: T) -> &mut Self {
+    pub fn D8<'a>(&mut self, byte: impl ToLabelOrNum<'a, u8>) -> &mut Self {
         let endian = self.endian;
         match byte.to_labelornum() {
             LabelOrNum::Num(n) => {
@@ -697,13 +697,13 @@ impl Section {
     /// Append `byte` as little-endian (identical to `D8`).
     ///
     /// Return this section.
-    pub fn L8<'a, T: ToLabelOrNum<'a, u8>>(&mut self, byte: T) -> &mut Self {
+    pub fn L8<'a>(&mut self, byte: impl ToLabelOrNum<'a, u8>) -> &mut Self {
         self.D8(byte)
     }
     /// Append `byte` as big-endian (identical to `D8`).
     ///
     /// Return this section.
-    pub fn B8<'a, T: ToLabelOrNum<'a, u8>>(&mut self, byte: T) -> &mut Self {
+    pub fn B8<'a>(&mut self, byte: impl ToLabelOrNum<'a, u8>) -> &mut Self {
         self.D8(byte)
     }
 
@@ -711,7 +711,7 @@ impl Section {
     ///
     /// `word` may be a `Label` or a `u16`.
     /// Return this section.
-    pub fn D16<'a, T: ToLabelOrNum<'a, u16>>(&mut self, word: T) -> &mut Self {
+    pub fn D16<'a>(&mut self, word: impl ToLabelOrNum<'a, u16>) -> &mut Self {
         match self.endian {
             Endian::Little => self.L16(word),
             Endian::Big => self.B16(word),
@@ -721,7 +721,7 @@ impl Section {
     ///
     /// `word` may be a `Label` or a `u16`.
     /// Return this section.
-    pub fn L16<'a, T: ToLabelOrNum<'a, u16>>(&mut self, word: T) -> &mut Self {
+    pub fn L16<'a>(&mut self, word: impl ToLabelOrNum<'a, u16>) -> &mut Self {
         match word.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u16::<LittleEndian>(n).unwrap();
@@ -734,7 +734,7 @@ impl Section {
     ///
     /// `word` may be a `Label` or a `u16`.
     /// Return this section.
-    pub fn B16<'a, T: ToLabelOrNum<'a, u16>>(&mut self, word: T) -> &mut Self {
+    pub fn B16<'a>(&mut self, word: impl ToLabelOrNum<'a, u16>) -> &mut Self {
         match word.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u16::<BigEndian>(n).unwrap();
@@ -748,7 +748,7 @@ impl Section {
     ///
     /// `dword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn D32<'a, T: ToLabelOrNum<'a, u32>>(&mut self, dword: T) -> &mut Self {
+    pub fn D32<'a>(&mut self, dword: impl ToLabelOrNum<'a, u32>) -> &mut Self {
         match self.endian {
             Endian::Little => self.L32(dword),
             Endian::Big => self.B32(dword),
@@ -758,7 +758,7 @@ impl Section {
     ///
     /// `dword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn L32<'a, T: ToLabelOrNum<'a, u32>>(&mut self, dword: T) -> &mut Self {
+    pub fn L32<'a>(&mut self, dword: impl ToLabelOrNum<'a, u32>) -> &mut Self {
         match dword.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u32::<LittleEndian>(n).unwrap();
@@ -771,7 +771,7 @@ impl Section {
     ///
     /// `dword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn B32<'a, T: ToLabelOrNum<'a, u32>>(&mut self, dword: T) -> &mut Self {
+    pub fn B32<'a>(&mut self, dword: impl ToLabelOrNum<'a, u32>) -> &mut Self {
         match dword.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u32::<BigEndian>(n).unwrap();
@@ -785,7 +785,7 @@ impl Section {
     ///
     /// `qword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn D64<'a, T: ToLabelOrNum<'a, u64>>(&mut self, qword: T) -> &mut Self {
+    pub fn D64<'a>(&mut self, qword: impl ToLabelOrNum<'a, u64>) -> &mut Self {
         match self.endian {
             Endian::Little => self.L64(qword),
             Endian::Big => self.B64(qword),
@@ -795,7 +795,7 @@ impl Section {
     ///
     /// `qword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn L64<'a, T: ToLabelOrNum<'a, u64>>(&mut self, qword: T) -> &mut Self {
+    pub fn L64<'a>(&mut self, qword: impl ToLabelOrNum<'a, u64>) -> &mut Self {
         match qword.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u64::<LittleEndian>(n).unwrap();
@@ -808,7 +808,7 @@ impl Section {
     ///
     /// `qword` may be a `Label` or a `u32`.
     /// Return this section.
-    pub fn B64<'a, T: ToLabelOrNum<'a, u64>>(&mut self, qword: T) -> &mut Self {
+    pub fn B64<'a>(&mut self, qword: impl ToLabelOrNum<'a, u64>) -> &mut Self {
         match qword.to_labelornum() {
             LabelOrNum::Num(n) => {
                 self.contents.write_u64::<BigEndian>(n).unwrap();
