@@ -84,9 +84,7 @@
 doc_comment::doctest!("../README.md");
 
 use std::{
-    borrow::Borrow,
     cell::RefCell,
-    fmt,
     io::{Cursor, Seek, SeekFrom, Write},
     ops::{Add, Deref, Sub},
     rc::Rc,
@@ -110,34 +108,20 @@ pub const DEFAULT_ENDIAN: Endian = Endian::Little;
 pub const DEFAULT_ENDIAN: Endian = Endian::Big;
 
 /// Potential values of a `Binding`.
+#[derive(Debug)]
 enum BindingValue {
     /// A known constant value.
     Constant(u64),
     /// Equal to some other binding plus a constant.
     From(Rc<Binding>, i64),
     /// Free to take on any value.
-    Unconstrained,
-}
-
-impl fmt::Debug for BindingValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match *self {
-            BindingValue::Constant(v) => write!(f, "Constant({})", v),
-            BindingValue::From(ref b, v) => write!(f, "From({:?}, {})", b, v),
-            BindingValue::Unconstrained => write!(f, "Unconstrained"),
-        }
-    }
+    Unconstrained(&'static std::panic::Location<'static>),
 }
 
 /// A label's value, or if that is not yet known, how the value is related to other labels' values.
+#[derive(Debug)]
 struct Binding {
     value: RefCell<BindingValue>,
-}
-
-impl fmt::Debug for Binding {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Binding {{ {:?} }}", self.value.borrow())
-    }
 }
 
 /// These methods need to work with Rc<Binding>, so they go on a trait implemented for that type.
@@ -179,18 +163,21 @@ impl BindingOffset for Rc<Binding> {
 
 impl Binding {
     /// Create a new Binding with an unconstrained value.
+    #[track_caller]
     pub fn unconstrained() -> Binding {
         Binding {
-            value: RefCell::new(BindingValue::Unconstrained),
+            value: RefCell::new(BindingValue::Unconstrained(std::panic::Location::caller())),
         }
     }
     /// Create a new Binding whose value is taken from another Binding.
+    #[track_caller]
     pub fn from(other: Rc<Binding>, offset: i64) -> Binding {
         Binding {
             value: RefCell::new(BindingValue::From(other, offset)),
         }
     }
     /// Create a new Binding with a constant value.
+    #[track_caller]
     pub fn constant(val: u64) -> Binding {
         Binding {
             value: RefCell::new(BindingValue::Constant(val)),
@@ -202,89 +189,24 @@ impl Binding {
         let mut v = self.value.borrow_mut();
         *v = BindingValue::Constant(val);
     }
+
     /// Set this `Binding`s value equal to `other`.
     pub fn set(&self, other: Rc<Binding>) {
         let mut v = self.value.borrow_mut();
         let (base, offset) = other.get_base_and_offset();
         *v = BindingValue::From(base, offset);
     }
+
     /// Get the constant value of the `Binding`, if known.
-    pub fn value(&self) -> Option<u64> {
+    pub fn value(&self) -> Result<u64, UndefinedLabelError> {
         match *self.value.borrow() {
             // If this Binding is a constant, this is easy.
-            BindingValue::Constant(c) => Some(c),
+            BindingValue::Constant(c) => Ok(c),
             // If this Binding is based on another Binding, ask it for its
             // value.
             BindingValue::From(ref base, addend) => base.value().map(|v| v + addend as u64),
             // If this Binding is unconstrained then its value is not known.
-            _ => None,
-        }
-    }
-}
-
-#[doc(hidden)]
-pub struct RealLabel {
-    binding: Rc<Binding>,
-}
-
-impl fmt::Debug for RealLabel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.binding)
-    }
-}
-
-/// Methods for creating a `Label` (or a `RealLabel`, but don't do that).
-pub trait LabelMaker {
-    /// Create an undefined label.
-    fn new() -> Self;
-    /// Create a label with a constant value `val`.
-    fn from_const(val: u64) -> Self;
-    /// Create a label whose value is equal to `other`.
-    fn from_label(other: &Self) -> Self;
-    /// Create a label whose value is equal to `other` plus `offset`.
-    fn from_label_offset(other: &Self, offset: i64) -> Self;
-}
-
-impl RealLabel {
-    /// Get the constant value of the `RealLabel`, if known.
-    pub fn value(&self) -> Option<u64> {
-        self.binding.value()
-    }
-    /// Get the relative offset from another label, if possible.
-    pub fn offset(&self, other: &RealLabel) -> Option<i64> {
-        // Let the Binding calculate the offset.
-        self.binding.offset(&other.binding)
-    }
-    /// Set this `RealLabel`s value to `val`.
-    pub fn set_const(&self, val: u64) {
-        self.binding.set_const(val);
-    }
-    /// Set this `RealLabel`s value equal to `other`.
-    pub fn set(&self, other: &RealLabel) {
-        //TODO: could use some sanity checks here?
-        self.binding.set(other.binding.clone())
-    }
-}
-
-impl LabelMaker for RealLabel {
-    fn new() -> RealLabel {
-        RealLabel {
-            binding: Rc::new(Binding::unconstrained()),
-        }
-    }
-    fn from_const(val: u64) -> RealLabel {
-        RealLabel {
-            binding: Rc::new(Binding::constant(val)),
-        }
-    }
-    fn from_label(other: &RealLabel) -> RealLabel {
-        RealLabel {
-            binding: other.binding.clone(),
-        }
-    }
-    fn from_label_offset(other: &RealLabel, offset: i64) -> RealLabel {
-        RealLabel {
-            binding: Rc::new(Binding::from(other.binding.clone(), offset)),
+            BindingValue::Unconstrained(location) => Err(UndefinedLabelError { location }),
         }
     }
 }
@@ -327,41 +249,87 @@ impl LabelMaker for RealLabel {
 /// // l2's value is derived from l1.
 /// assert_eq!(l2.value().unwrap(), 11);
 /// ```
-#[derive(Clone)]
-pub struct Label(pub Rc<RealLabel>);
+#[derive(Clone, Debug)]
+pub struct Label {
+    binding: Rc<Binding>,
+}
 
-impl fmt::Debug for Label {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Label {{ {:?} }}", self.0)
+/// Indicates that [`Label::value`] was called on a label which was undefined.
+#[derive(Debug)]
+pub struct UndefinedLabelError {
+    location: &'static std::panic::Location<'static>,
+}
+
+impl UndefinedLabelError {
+    pub fn location(&self) -> &'static std::panic::Location<'static> {
+        self.location
     }
 }
 
-impl Deref for Label {
-    type Target = RealLabel;
-
-    fn deref(&self) -> &Self::Target {
-        let &Label(ref inner) = self;
-        inner.deref()
+impl std::fmt::Display for UndefinedLabelError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", self.location)
     }
 }
 
-impl LabelMaker for Label {
-    fn new() -> Self {
-        Self(Rc::new(RealLabel::new()))
+impl std::error::Error for UndefinedLabelError {}
+
+impl Label {
+    /// Get the constant value of the `Label`, if known.
+    pub fn value(&self) -> Result<u64, UndefinedLabelError> {
+        self.binding.value()
     }
-    fn from_const(val: u64) -> Self {
-        Self(Rc::new(RealLabel::from_const(val)))
+    /// Get the relative offset from another label, if possible.
+    pub fn offset(&self, other: &Self) -> Option<i64> {
+        // Let the Binding calculate the offset.
+        self.binding.offset(&other.binding)
     }
-    fn from_label(other: &Self) -> Self {
-        let &Self(ref inner) = other;
-        Label(Rc::new(RealLabel::from_label(inner.borrow())))
+    /// Set this [`Label`]s value to `val`.
+    pub fn set_const(&self, val: u64) {
+        self.binding.set_const(val);
     }
-    fn from_label_offset(other: &Self, offset: i64) -> Self {
-        let &Self(ref inner) = other;
-        Self(Rc::new(RealLabel::from_label_offset(
-            inner.borrow(),
-            offset,
-        )))
+    /// Set this [`Label`]s value equal to `other`.
+    pub fn set(&self, other: &Self) {
+        //TODO: could use some sanity checks here?
+        self.binding.set(other.binding.clone())
+    }
+}
+
+impl Label {
+    /// Create an undefined label.
+    #[track_caller]
+    pub fn new() -> Self {
+        Self {
+            binding: Rc::new(Binding::unconstrained()),
+        }
+    }
+
+    /// Create a label with a constant value `val`.
+    pub fn from_const(val: u64) -> Self {
+        Self {
+            binding: Rc::new(Binding::constant(val)),
+        }
+    }
+
+    /// Create a label whose value is equal to `other`.
+    pub fn from_label(other: &Self) -> Self {
+        Self {
+            binding: other.binding.clone(),
+        }
+    }
+
+    /// Create a label whose value is equal to `other` plus `offset`.
+    pub fn from_label_offset(other: &Self, offset: i64) -> Self {
+        Self {
+            binding: Rc::new(Binding::from(other.binding.clone(), offset)),
+        }
+    }
+}
+
+impl Default for Label {
+    #[track_caller]
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -485,17 +453,49 @@ pub struct Section {
     final_size: Label,
 }
 
+/// Indicates that there were one or more undefined labels.
+///
+/// The locations at which these labels were created are in the Debug implementation of this
+/// struct.
+pub struct UndefinedLabelsError {
+    locations: Vec<UndefinedLabelError>,
+}
+
+impl std::error::Error for UndefinedLabelsError {}
+
+impl std::fmt::Debug for UndefinedLabelsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "{}", self)
+    }
+}
+
+impl std::fmt::Display for UndefinedLabelsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        writeln!(f, "\nundefined labels were created at:")?;
+
+        for location in &self.locations {
+            writeln!(f, " * {}", location)?;
+        }
+
+        writeln!(f)?;
+
+        Ok(())
+    }
+}
+
 impl Section {
     /// Construct a `Section` with platform-default endianness.
     #[inline]
-    pub fn new() -> Self {
-        Self::with_endian(DEFAULT_ENDIAN)
+    #[track_caller]
+    pub fn new() -> Section {
+        Section::with_endian(DEFAULT_ENDIAN)
     }
 
     /// Construct a `Section` with `endian` endianness.
     #[inline]
-    pub fn with_endian(endian: Endian) -> Self {
-        Self {
+    #[track_caller]
+    pub fn with_endian(endian: Endian) -> Section {
+        Section {
             endian,
             contents: Cursor::new(vec![]),
             references: vec![],
@@ -531,17 +531,26 @@ impl Section {
     ///
     /// Consumes the section. If there were still undefined labels,
     /// return `None`.
-    pub fn get_contents(self) -> Option<Vec<u8>> {
+    pub fn get_contents(self) -> Result<Vec<u8>, UndefinedLabelsError> {
         // Patch all labels into the section's contents.
         let mut section = self;
         section.final_size.set_const(section.size());
+        let mut locations = Vec::new();
 
         for rf in section.references.clone() {
-            let val = rf.label.value()?;
-            section.store_label_value(val, rf.offset, rf.endian, rf.size);
+            match rf.label.value() {
+                Ok(val) => {
+                    section.store_label_value(val, rf.offset, rf.endian, rf.size);
+                }
+                Err(e) => locations.push(e),
+            }
         }
 
-        Some(section.contents.into_inner())
+        if locations.is_empty() {
+            Ok(section.contents.into_inner())
+        } else {
+            Err(UndefinedLabelsError { locations })
+        }
     }
 
     /// Return a label representing the start of the section.
@@ -665,7 +674,7 @@ impl Section {
     fn append_label(&mut self, label: &Label, endian: Endian, size: usize) -> &mut Self {
         let current = self.size();
         // For labels with a known value, don't bother with a reference.
-        if let Some(val) = label.value() {
+        if let Ok(val) = label.value() {
             self.store_label_value(val, current, endian, size)
         } else {
             // label isn't yet known, need to store a reference.
@@ -820,6 +829,7 @@ impl Section {
 }
 
 impl Default for Section {
+    #[track_caller]
     fn default() -> Self {
         Section::new()
     }
@@ -870,17 +880,17 @@ mod test {
         let b_u = Rc::new(Binding::unconstrained());
         let b_c = Rc::new(Binding::constant(1));
         let b_f1 = Rc::new(Binding::from(b_u.clone(), 0));
-        assert!(b_u.value().is_none());
+        assert!(b_u.value().is_err());
         assert_eq!(b_c.value().unwrap(), 1);
-        assert!(b_f1.value().is_none());
+        assert!(b_f1.value().is_err());
 
         let b_f2 = Rc::new(Binding::from(b_c, 10));
         assert_eq!(b_f2.value().unwrap(), 11);
         // We need to go deeper.
         let b_f3 = Rc::new(Binding::from(b_f1, 10));
-        assert!(b_f3.value().is_none());
+        assert!(b_f3.value().is_err());
         let b_f4 = Rc::new(Binding::from(b_f3, 10));
-        assert!(b_f4.value().is_none());
+        assert!(b_f4.value().is_err());
 
         let b_f5 = Rc::new(Binding::from(b_f2, 10));
         assert_eq!(b_f5.value().unwrap(), 21);
@@ -889,7 +899,7 @@ mod test {
     #[test]
     fn label_unconstrained() {
         let l = Label::new();
-        assert!(l.value().is_none());
+        assert!(l.value().is_err());
     }
 
     #[test]
@@ -902,7 +912,7 @@ mod test {
     fn label_label() {
         let l1 = Label::new();
         let l2 = Label::from_label(&l1);
-        assert!(l2.value().is_none());
+        assert!(l2.value().is_err());
         // The offset should work both ways.
         assert_eq!(l2.offset(&l1).unwrap(), 0);
         assert_eq!(l1.offset(&l2).unwrap(), 0);
@@ -912,7 +922,7 @@ mod test {
     fn label_label_offset() {
         let l1 = Label::new();
         let l2 = Label::from_label_offset(&l1, 10);
-        assert!(l2.value().is_none());
+        assert!(l2.value().is_err());
         assert_eq!(l2.offset(&l1).unwrap(), 10);
         assert_eq!(l1.offset(&l2).unwrap(), -10);
 
@@ -1182,7 +1192,7 @@ mod test {
         let l = Label::new();
         assert!(Section::inline(Some(Endian::Little), |s| s.D8(&l))
             .get_contents()
-            .is_none());
+            .is_err());
     }
 
     #[test]
@@ -1273,5 +1283,38 @@ mod test {
                 0xFF
             ]
         );
+    }
+
+    #[test]
+    fn location_works() {
+        let l = Label::new();
+        let line = line!();
+
+        assert_eq!(l.value().unwrap_err().location().file(), "src/lib.rs");
+        assert_eq!(l.value().unwrap_err().location().line(), line - 1);
+    }
+
+    #[test]
+    fn default_section_retains_location() {
+        let s = Section::default();
+        let line = line!();
+
+        assert_eq!(
+            s.final_size().value().unwrap_err().location().file(),
+            "src/lib.rs"
+        );
+        assert_eq!(
+            s.final_size().value().unwrap_err().location().line(),
+            line - 1
+        );
+    }
+
+    #[test]
+    fn default_label_retains_location() {
+        let s = Label::default();
+        let line = line!();
+
+        assert_eq!(s.value().unwrap_err().location().file(), "src/lib.rs");
+        assert_eq!(s.value().unwrap_err().location().line(), line - 1);
     }
 }
